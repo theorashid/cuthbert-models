@@ -5,7 +5,7 @@ import equinox as eqx
 from jaxtyping import Array, Float
 
 from cuthbert_models._methods import Kalman, Particle
-from cuthbert_models._types import Posterior
+from cuthbert_models._types import Posterior, SmoothedPosterior
 
 Method = Kalman | Particle
 _DEFAULT_METHOD = Kalman()
@@ -53,3 +53,12 @@ class LinearGaussianSSM(eqx.Module):
             emission_covariance=lambda _x, t: self.emission_covariance(t),
         )
         return nonlinear.infer(emissions, method=method)
+
+    def smooth(
+        self,
+        emissions: Float[Array, "time obs"],
+        method: Kalman = _DEFAULT_METHOD,
+    ) -> SmoothedPosterior:
+        from cuthbert_models._inference import smooth_kalman  # noqa: PLC0415
+
+        return smooth_kalman(self, emissions, parallel=method.parallel)

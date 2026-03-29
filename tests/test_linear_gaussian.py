@@ -149,3 +149,22 @@ def test_beartype_catches_wrong_shape():
             emission_weights=lambda _t: jnp.eye(2),
             emission_covariance=lambda _t: jnp.eye(2),
         )
+
+
+def test_smoother_returns_smoothed_means():
+    params, _, emissions = _random_lgssm_args(jr.key(8))
+    model = _build_model(params)
+    result = model.smooth(emissions, method=Kalman())
+    assert result.smoothed_means.shape == result.filtered_means.shape
+    assert result.smoothed_covariances.shape == result.filtered_covariances.shape
+    assert jnp.isfinite(result.marginal_log_likelihood)
+
+
+def test_smoother_covariance_leq_filter():
+    """Smoothed covariance should be <= filtered covariance (in PSD sense)."""
+    params, _, emissions = _random_lgssm_args(jr.key(9))
+    model = _build_model(params)
+    result = model.smooth(emissions, method=Kalman())
+    diff = result.filtered_covariances - result.smoothed_covariances
+    eigenvals = jnp.linalg.eigvalsh(diff)
+    assert jnp.all(eigenvals > -1e-6)

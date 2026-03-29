@@ -165,3 +165,15 @@ def test_genuinely_nonlinear():
         result = model.infer(emissions, method=method)
         assert jnp.isfinite(result.marginal_log_likelihood)
         assert result.filtered_means.shape == (20, state_dim)
+
+
+@pytest.mark.parametrize("method", METHODS, ids=METHOD_IDS)
+def test_smoother_matches_kalman_on_linear(method):
+    params, _, emissions = _random_lgssm_args(jr.key(16))
+    linear = _build_linear(params)
+    nonlinear = _build_nonlinear(params)
+    kalman_result = linear.smooth(emissions, method=Kalman())
+    approx_result = nonlinear.smooth(emissions, method=method)
+    assert jnp.allclose(
+        kalman_result.smoothed_means, approx_result.smoothed_means, atol=1e-2,
+    )

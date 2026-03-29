@@ -105,3 +105,11 @@ def test_deterministic_hmm():
     emissions = jnp.array([[5.0], [0.0], [5.0], [0.0]])
     posterior = model.infer(emissions, method=Forward())
     assert posterior.filtered_means[0, 1] > 0.99
+
+
+def test_smoother_probs_are_valid():
+    model, emissions = _random_hmm_args(jr.key(25))
+    result = model.smooth(emissions, method=Forward())
+    assert jnp.all(result.smoothed_means >= 0)
+    assert jnp.allclose(result.smoothed_means.sum(axis=-1), 1.0, atol=1e-5)
+    assert jnp.isfinite(result.marginal_log_likelihood)

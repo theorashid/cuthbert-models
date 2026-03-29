@@ -5,7 +5,7 @@ import equinox as eqx
 from jaxtyping import Array, Float
 
 from cuthbert_models._methods import EKF, UKF, Particle
-from cuthbert_models._types import Posterior
+from cuthbert_models._types import Posterior, SmoothedPosterior
 
 Method = EKF | UKF | Particle
 _DEFAULT_METHOD = EKF()
@@ -51,5 +51,19 @@ class NonlinearGaussianSSM(eqx.Module):
             n_particles=method.n_particles, ess_threshold=method.ess_threshold,
         )
 
+    SmoothMethod = EKF | UKF
+    _DEFAULT_SMOOTH_METHOD = EKF()
 
+    def smooth(
+        self,
+        emissions: Float[Array, "time obs"],
+        method: SmoothMethod = _DEFAULT_SMOOTH_METHOD,
+    ) -> SmoothedPosterior:
+        from cuthbert_models._inference import (  # noqa: PLC0415
+            smooth_ekf,
+            smooth_ukf,
+        )
 
+        if isinstance(method, EKF):
+            return smooth_ekf(self, emissions)
+        return smooth_ukf(self, emissions)
