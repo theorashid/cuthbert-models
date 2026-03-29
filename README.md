@@ -23,6 +23,20 @@ The model defines the generative process.
 The method chooses the inference algorithm.
 cuthbert does the work.
 
+## Design
+
+cuthbert is a low-level library. To run a Kalman filter you call `build_filter` with callback functions (`get_init_params`, `get_dynamics_params`, `get_observation_params`), construct a `model_inputs` array, then call `cuthbert.filter`. Smoothing, EKF, UKF, and particle filters each have their own `build_filter`/`build_smoother` with different callback signatures. You manage Cholesky decompositions, time indexing, and the mapping between your model parameters and cuthbert's internal representation yourself.
+
+cuthbert-models removes all of that. You specify the generative model once -- initial distribution, dynamics, emissions -- and the bridge layer (`_inference.py`) handles:
+
+- Converting covariance matrices to Cholesky factors
+- Building the correct callback functions for each algorithm
+- Mapping time indices to your callable parameters
+- Constructing `model_inputs` and calling `cuthbert.filter`/`cuthbert.smoother`
+- Packaging raw filter states into typed posterior objects
+
+The user never touches `build_filter`. Switching from Kalman to EKF to particle filtering is just changing the method argument. Because models are `eqx.Module`s, they compose with the JAX ecosystem: `jax.grad`, `jax.vmap`, `eqx.partition`, optax, numpyro all work out of the box.
+
 ## Models
 
 Each model is an `eqx.Module` with `.infer()` and `.smooth()`.
