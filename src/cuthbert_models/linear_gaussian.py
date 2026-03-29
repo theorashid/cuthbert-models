@@ -1,0 +1,60 @@
+from collections.abc import Callable
+from typing import Any
+
+import equinox as eqx
+from jaxtyping import Array, Float
+
+from cuthbert_models._types import Posterior
+
+VALID_METHODS = {"kalman", "kalman_parallel", "ekf", "ukf", "particle"}
+
+
+class LinearGaussianSSM(eqx.Module):
+
+    """
+    Linear Gaussian state space model.
+
+    x_0 ~ N(initial_mean, initial_covariance)
+    x_t = dynamics_weights(t) @ x_{t-1} + N(0, dynamics_covariance(t))
+    y_t = emission_weights(t) @ x_t + N(0, emission_covariance(t))
+
+    All parameter fields are callables (t) -> Array.
+    """
+
+    initial_mean: Float[Array, " state"]
+    initial_covariance: Float[Array, "state state"]
+    dynamics_weights: Callable[[Any], Float[Array, "state state"]]
+    dynamics_covariance: Callable[[Any], Float[Array, "state state"]]
+    emission_weights: Callable[[Any], Float[Array, "obs state"]]
+    emission_covariance: Callable[[Any], Float[Array, "obs obs"]]
+
+    def infer(
+        self,
+        emissions: Float[Array, "time obs"],
+        method: str = "kalman",
+    ) -> Posterior:
+        method = _resolve_method(method)
+
+        from cuthbert_models._inference import (  # noqa: PLC0415
+            infer_ekf,
+            infer_kalman,
+            infer_ukf,
+        )
+
+        if method == "kalman":
+            return infer_kalman(self, emissions, parallel=False)
+        if method == "kalman_parallel":
+            return infer_kalman(self, emissions, parallel=True)
+        if method == "ekf":
+            return infer_ekf(self, emissions)
+        if method == "ukf":
+            return infer_ukf(self, emissions)
+        msg = "Particle filter not yet implemented for LinearGaussianSSM"
+        raise NotImplementedError(msg)
+
+
+def _resolve_method(method: str) -> str:
+    if method not in VALID_METHODS:
+        msg = f"Unknown method {method!r}. Valid: {sorted(VALID_METHODS)}"
+        raise ValueError(msg)
+    return method

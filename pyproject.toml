@@ -1,0 +1,79 @@
+[project]
+name = "cuthbert-models"
+version = "0.0.1"
+description = "The white chocolate face. Model specification layer for cuthbert."
+readme = "README.md"
+license = "Apache-2.0"
+authors = [
+    { name = "Theo Rashid" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "cuthbert>=0.0.8",
+    "equinox>=0.13.4",
+    "jax>=0.8.0",
+    "jaxtyping>=0.3.3",
+    "numpyro>=0.20.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.7,<0.11.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "optax>=0.2.7",
+    "pytest>=8.4.2",
+    "ruff>=0.14.4",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "ALL",
+]
+ignore = [
+    #### modules
+    "ANN", # flake8-annotations
+    "COM", # flake8-commas
+    "C90", # mccabe complexity
+    "DJ",  # django
+    "EXE", # flake8-executable
+    "T10", # debugger
+    "TID", # flake8-tidy-imports
+    #### specific rules
+    "D100",   # ignore missing docs
+    "D101",
+    "D102",
+    "D103",
+    "D104",
+    "D105",
+    "D106",
+    "D107",
+    "D200",
+    "D205",
+    "D211",
+    "D212",
+    "D400",
+    "D401",
+    "D415",
+    "E402",   # false positives for local imports
+    "ERA001", # commented out code
+    "F722",   # jaxtyping: https://docs.kidger.site/jaxtyping/faq/#flake8-or-ruff-are-throwing-an-error
+    "PLR0913",
+    "TRY003", # external messages in exceptions are too verbose
+    "TD002",
+    "TD003",
+    "FIX002", # too verbose descriptions of todos
+    "N803",
+    "N806",
+    "S101",
+    "TC002", # jaxtyping imports used at runtime
+    "PLR2004",
+]
