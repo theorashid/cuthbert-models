@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from jax import Array
@@ -27,5 +28,5 @@ class Forward:
 @dataclass(frozen=True)
 class Particle:
     key: Key[Array, ""]
+    resampling_fn: Callable
     n_particles: int = 100
-    ess_threshold: float = 0.5

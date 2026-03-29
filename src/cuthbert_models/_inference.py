@@ -23,7 +23,6 @@ from cuthbert.gaussian.moments import smoother as moments_smoother_mod
 from cuthbert.gaussian.taylor import filter as taylor_filter
 from cuthbert.gaussian.taylor import smoother as taylor_smoother_mod
 from cuthbert.smc import particle_filter as pf
-from cuthbertlib.resampling.systematic import resampling as systematic_resampling
 from jaxtyping import Array, Float, Key
 
 from cuthbert_models._types import (
@@ -381,8 +380,8 @@ def infer_particle_gaussian(
     emissions: Float[Array, "time obs"],
     *,
     key: Key[Array, ""],
+    resampling_fn,
     n_particles: int = 100,
-    ess_threshold: float = 0.5,
 ) -> GaussianPosterior:
     dtype = model.initial_mean.dtype
     state_dim = model.initial_mean.shape[0]
@@ -417,8 +416,7 @@ def infer_particle_gaussian(
         propagate_sample,
         log_potential,
         n_filter_particles=n_particles,
-        resampling_fn=systematic_resampling,
-        ess_threshold=ess_threshold,
+        resampling_fn=resampling_fn,
     )
     model_inputs = jnp.arange(emissions.shape[0] + 1)
     states = cuthbert_filter(filter_obj, model_inputs, parallel=False, key=key)
@@ -446,8 +444,8 @@ def infer_particle_hmm(
     emissions: Float[Array, "time ..."],
     *,
     key: Key[Array, ""],
+    resampling_fn,
     n_particles: int = 100,
-    ess_threshold: float = 0.5,
 ) -> DiscretePosterior:
     dtype = model.initial_distribution.dtype
     n_states = model.initial_distribution.shape[0]
@@ -471,8 +469,7 @@ def infer_particle_hmm(
         propagate_sample,
         log_potential,
         n_filter_particles=n_particles,
-        resampling_fn=systematic_resampling,
-        ess_threshold=ess_threshold,
+        resampling_fn=resampling_fn,
     )
     model_inputs = jnp.arange(emissions.shape[0] + 1)
     states = cuthbert_filter(filter_obj, model_inputs, parallel=False, key=key)

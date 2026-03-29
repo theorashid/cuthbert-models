@@ -35,14 +35,14 @@ wheels = [
 
 [[package]]
 name = "cuthbert"
-version = "0.0.8"
+version = "0.0.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cuthbertlib" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/66/64/edce391c5b996bc214396ca8d488fdb7e2d1f8c6ce5a99d52979d61a414b/cuthbert-0.0.8.tar.gz", hash = "sha256:592bff7ce8b873433534d84089a988ed3277640b22a57c4a63b3d50fd2f1b984", size = 24803, upload-time = "2026-02-23T16:18:35.403Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c5/40/34cf6fe426808a7e4938b97b1ee85abd248a9d10b85cd32b0f3067602307/cuthbert-0.0.9.tar.gz", hash = "sha256:91fc57ea0e08474945ebc6feaf01c03f1118376c2bc7681f2414fe616026a7fb", size = 24735, upload-time = "2026-03-29T12:45:37.725Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/54/27/6aaed0df69cd728e4cef99149ba05470e6590eec3f1eb03e92b61223e88a/cuthbert-0.0.8-py3-none-any.whl", hash = "sha256:37203f3e2052869194a5d0bd3b054461434282928fa8e137f0e6dff994bbad37", size = 42805, upload-time = "2026-02-23T16:18:34.095Z" },
+    { url = "https://files.pythonhosted.org/packages/50/7b/035b06c1917e9bd7f03a1fb5505b43570b9a80dcd7fed9312ff8264ae73b/cuthbert-0.0.9-py3-none-any.whl", hash = "sha256:cfac0b8988aab84d293a45518c9fd379283647fb141a872a2cf8d05d182b273d", size = 42681, upload-time = "2026-03-29T12:45:36.415Z" },
 ]
 
 [[package]]
@@ -51,6 +51,7 @@ version = "0.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "cuthbert" },
+    { name = "cuthbertlib" },
     { name = "equinox" },
     { name = "jax" },
     { name = "jaxtyping" },
@@ -73,7 +74,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "cuthbert", specifier = ">=0.0.8" },
+    { name = "cuthbert", specifier = ">=0.0.9" },
+    { name = "cuthbertlib", specifier = ">=0.0.9" },
     { name = "equinox", specifier = ">=0.13.6" },
     { name = "jax", specifier = ">=0.9.2" },
     { name = "jaxtyping", specifier = ">=0.3.9" },
@@ -93,15 +95,15 @@ dev = [
 
 [[package]]
 name = "cuthbertlib"
-version = "0.0.8"
+version = "0.0.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jax" },
     { name = "numba" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/27/40/8fd4613c226f07cdc10c90c1352ce1473863977c1600249172a0071a0d65/cuthbertlib-0.0.8.tar.gz", hash = "sha256:0a2a8c89d32ddf72cd38ced3321ecd51166675c362375b9a7ae93b065b9d6f26", size = 26978, upload-time = "2026-02-23T16:18:07.603Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/54/a5/dd4da533fdf72296848804a879f158fa7687334bd7b58480c409ed818bf6/cuthbertlib-0.0.9.tar.gz", hash = "sha256:592a90d7ba6b637b8bd7342c54a2b3e8ef35b299ff155f23217c42907afefc43", size = 30012, upload-time = "2026-03-29T12:45:15.83Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b6/9b/06b9a380a139e8a09eacd9a3b43c0f0444870ba2d4e10f619a1df3576266/cuthbertlib-0.0.8-py3-none-any.whl", hash = "sha256:015b95143ac5e5fd9c07c1642e1aa227df5edc80d4fab8d247739f287186c44c", size = 44616, upload-time = "2026-02-23T16:18:06.549Z" },
+    { url = "https://files.pythonhosted.org/packages/1e/d6/c3405f9caf60a27adc903e79ec0381576fc7bf12fc1aa164862651422ef7/cuthbertlib-0.0.9-py3-none-any.whl", hash = "sha256:cf5bc95c09bdcd045167d7fddccc23a4864a19bbbe1cb985d10a3e1a35637c79", size = 49282, upload-time = "2026-03-29T12:45:14.565Z" },
 ]
 
 [[package]]

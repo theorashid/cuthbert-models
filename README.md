@@ -47,7 +47,7 @@ Kalman(parallel=True)       # associative scan
 EKF()
 UKF()
 Forward(parallel=True)
-Particle(key=jax.random.key(0), n_particles=500)
+Particle(key=jax.random.key(0), n_particles=500, resampling_fn=resampling)
 ```
 
 Invalid combinations are blocked by the type system.
@@ -105,7 +105,6 @@ uv sync --dev
 ## todo
 
 - **Exogenous inputs / bias terms.** cuthbert's Kalman filter supports bias vectors `c` and `d` in the dynamics and observation equations (`x_t = F @ x_{t-1} + c(t) + noise`). We hardcode them to zero. Adding `dynamics_bias` and `emission_bias` callable fields to `LinearGaussianSSM` would expose this without breaking linearity. For `NonlinearGaussianSSM`, exogenous inputs can already be absorbed into `dynamics_fn`.
-- **Differentiable particle filter.** Blocked on `cuthbertlib.autodiff.stop_gradient_decorator` (on cuthbertlib main, needs release >= 0.0.9). Would wrap the resampling step to let `jax.grad` flow through the particle filter. Test is sketched out in `test_outer_loop.py`.
 - **Continuous-time models.** Drift/diffusion SDE with discretise-then-filter via cd-dynamax or cuthbert.
 - **Missing observations.**
 - **Forecasting.**

@@ -53,7 +53,7 @@ class NonlinearGaussianSSM(eqx.Module):
             return infer_ukf(self, emissions)
         return infer_particle_gaussian(
             self, emissions, key=method.key,
-            n_particles=method.n_particles, ess_threshold=method.ess_threshold,
+            n_particles=method.n_particles, resampling_fn=method.resampling_fn,
         )
 
     def smooth(

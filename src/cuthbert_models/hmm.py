@@ -43,7 +43,7 @@ class HMM(eqx.Module):
             return infer_forward(self, emissions, parallel=method.parallel)
         return infer_particle_hmm(
             self, emissions, key=method.key,
-            n_particles=method.n_particles, ess_threshold=method.ess_threshold,
+            n_particles=method.n_particles, resampling_fn=method.resampling_fn,
         )
 
     def smooth(

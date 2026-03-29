@@ -3,6 +3,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import pytest
 from _helpers import random_lgssm_args
+from cuthbertlib.resampling.systematic import resampling as systematic_resampling
 
 from cuthbert_models import EKF, UKF, Kalman, LinearGaussianSSM, Particle
 
@@ -96,7 +97,12 @@ def test_vmap_over_data():
 def test_particle_filter_finite_log_likelihood():
     params, emissions = random_lgssm_args(jr.key(6))
     model = _build_model(params)
-    result = model.infer(emissions, method=Particle(key=jr.key(0), n_particles=200))
+    method = Particle(
+        key=jr.key(0),
+        resampling_fn=systematic_resampling,
+        n_particles=200,
+    )
+    result = model.infer(emissions, method=method)
     assert jnp.isfinite(result.marginal_log_likelihood)
     assert result.filtered_means.shape == (emissions.shape[0], params[0].shape[0])
 
@@ -106,7 +112,12 @@ def test_particle_filter_agrees_with_kalman():
     model = _build_model(params)
     kalman_ll = model.infer(emissions, method=Kalman()).marginal_log_likelihood
     pf_ll = model.infer(
-        emissions, method=Particle(key=jr.key(42), n_particles=500),
+        emissions,
+        method=Particle(
+            key=jr.key(42),
+            resampling_fn=systematic_resampling,
+            n_particles=500,
+        ),
     ).marginal_log_likelihood
     assert jnp.allclose(kalman_ll, pf_ll, atol=15.0)
 

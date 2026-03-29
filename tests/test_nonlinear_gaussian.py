@@ -2,6 +2,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import pytest
 from _helpers import random_lgssm_args
+from cuthbertlib.resampling.systematic import resampling as systematic_resampling
 
 from cuthbert_models import (
     EKF,
@@ -116,7 +117,12 @@ def test_particle_filter_agrees_with_kalman():
     linear = _build_linear(params)
     kalman_ll = linear.infer(emissions, method=Kalman()).marginal_log_likelihood
     pf_result = nonlinear.infer(
-        emissions, method=Particle(key=jr.key(99), n_particles=500),
+        emissions,
+        method=Particle(
+            key=jr.key(99),
+            resampling_fn=systematic_resampling,
+            n_particles=500,
+        ),
     )
     assert jnp.isfinite(pf_result.marginal_log_likelihood)
     assert jnp.allclose(kalman_ll, pf_result.marginal_log_likelihood, atol=15.0)

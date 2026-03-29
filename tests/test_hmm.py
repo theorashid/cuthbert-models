@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 import jax.random as jr
 import pytest
+from cuthbertlib.resampling.systematic import resampling as systematic_resampling
 
 from cuthbert_models import HMM, Forward, Kalman, Particle
 
@@ -77,7 +78,12 @@ def test_invalid_method():
 
 def test_particle_filter_hmm():
     model, emissions = _random_hmm_args(jr.key(24))
-    result = model.infer(emissions, method=Particle(key=jr.key(0), n_particles=500))
+    method = Particle(
+        key=jr.key(0),
+        resampling_fn=systematic_resampling,
+        n_particles=500,
+    )
+    result = model.infer(emissions, method=method)
     assert jnp.isfinite(result.marginal_log_likelihood)
     forward_ll = model.infer(emissions, method=Forward()).marginal_log_likelihood
     assert jnp.allclose(forward_ll, result.marginal_log_likelihood, atol=5.0)
