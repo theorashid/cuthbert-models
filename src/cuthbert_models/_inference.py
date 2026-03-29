@@ -25,7 +25,7 @@ from cuthbert.gaussian.taylor import filter as taylor_filter
 from cuthbert.gaussian.taylor import smoother as taylor_smoother_mod
 from cuthbert.smc import particle_filter as pf
 from cuthbertlib.resampling.systematic import resampling as systematic_resampling
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, Key
 
 from cuthbert_models._types import (
     DiscretePosterior,
@@ -371,7 +371,7 @@ def infer_particle_gaussian(
     model: NonlinearGaussianSSM,
     emissions: Float[Array, "time obs"],
     *,
-    key: jax.Array,
+    key: Key[Array, ""],
     n_particles: int = 100,
     ess_threshold: float = 0.5,
 ) -> GaussianPosterior:
@@ -434,7 +434,7 @@ def infer_particle_hmm(
     model: HMM,
     emissions: Float[Array, "time ..."],
     *,
-    key: jax.Array,
+    key: Key[Array, ""],
     n_particles: int = 100,
     ess_threshold: float = 0.5,
 ) -> DiscretePosterior:

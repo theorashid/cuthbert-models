@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 import jax.random as jr
-from jaxtyping import Array, Float
+from jaxtyping import Array, Float, Key
 
 
 def simulate_lgssm(
@@ -11,7 +11,7 @@ def simulate_lgssm(
     H: Float[Array, "o s"],
     R: Float[Array, "o o"],
     n_time: int,
-    key: Array,
+    key: Key[Array, ""],
 ) -> tuple[Float[Array, "t s"], Float[Array, "t o"]]:
     state_dim, obs_dim = F.shape[0], H.shape[0]
 
@@ -26,7 +26,7 @@ def simulate_lgssm(
 
 
 def random_lgssm_args(
-    key: Array, state_dim: int = 2, obs_dim: int = 1, n_time: int = 50,
+    key: Key[Array, ""], state_dim: int = 2, obs_dim: int = 1, n_time: int = 50,
 ) -> tuple:
     keys = jr.split(key, 7)
     m0 = jr.normal(keys[0], (state_dim,))
