@@ -1,24 +1,30 @@
-import equinox as eqx
+from dataclasses import dataclass
+
 from jax import Array
 
 
-class Kalman(eqx.Module):
+@dataclass(frozen=True)
+class Kalman:
     parallel: bool = False
 
 
-class EKF(eqx.Module):
+@dataclass(frozen=True)
+class EKF:
     pass
 
 
-class UKF(eqx.Module):
+@dataclass(frozen=True)
+class UKF:
     pass
 
 
-class Forward(eqx.Module):
+@dataclass(frozen=True)
+class Forward:
     parallel: bool = False
 
 
-class Particle(eqx.Module):
+@dataclass(frozen=True)
+class Particle:
     key: Array
     n_particles: int = 100
     ess_threshold: float = 0.5
