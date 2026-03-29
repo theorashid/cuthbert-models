@@ -5,7 +5,7 @@ import pytest
 from _helpers import random_lgssm_args
 from cuthbertlib.resampling.systematic import resampling as systematic_resampling
 
-from cuthbert_models import EKF, UKF, Kalman, LinearGaussianSSM, Particle
+from cuthbert_models import EKF, Kalman, LinearGaussianSSM, Particle
 
 
 def _build_model(params):
@@ -62,13 +62,13 @@ def test_parallel_matches_sequential():
     )
 
 
-def test_ekf_ukf_blocked():
+def test_ekf_blocked():
     params, emissions = random_lgssm_args(jr.key(4))
     model = _build_model(params)
     with pytest.raises(Exception):  # noqa: B017, PT011
-        model.infer(emissions, method=EKF())
+        model.infer(emissions, method=EKF(linearization="taylor"))
     with pytest.raises(Exception):  # noqa: B017, PT011
-        model.infer(emissions, method=UKF())
+        model.infer(emissions, method=EKF(linearization="moments"))
 
 
 def test_invalid_method():

@@ -12,12 +12,7 @@ class Kalman:
 
 @dataclass(frozen=True)
 class EKF:
-    pass
-
-
-@dataclass(frozen=True)
-class UKF:
-    pass
+    linearization: str
 
 
 @dataclass(frozen=True)

@@ -37,15 +37,15 @@ from cuthbert_models.nonlinear_gaussian import NonlinearGaussianSSM
 
 __all__ = [
     "infer_ekf",
+    "infer_ekf_moments",
     "infer_forward",
     "infer_kalman",
     "infer_particle_gaussian",
     "infer_particle_hmm",
-    "infer_ukf",
     "smooth_ekf",
+    "smooth_ekf_moments",
     "smooth_forward",
     "smooth_kalman",
-    "smooth_ukf",
 ]
 
 # ---------------------------------------------------------------------------
@@ -236,11 +236,11 @@ def smooth_ekf(
 
 
 # ---------------------------------------------------------------------------
-# UKF (Moments) callback factories
+# EKF Moments linearization callback factories
 # ---------------------------------------------------------------------------
 
 
-def _ukf_callbacks(
+def _ekf_moments_callbacks(
     model: NonlinearGaussianSSM,
     emissions: Float[Array, "time obs"],
 ):
@@ -277,11 +277,11 @@ def _ukf_callbacks(
     return get_init_params, get_dynamics_moments, get_observation_moments
 
 
-def infer_ukf(
+def infer_ekf_moments(
     model: NonlinearGaussianSSM,
     emissions: Float[Array, "time obs"],
 ) -> GaussianPosterior:
-    get_init, get_dyn, get_obs = _ukf_callbacks(model, emissions)
+    get_init, get_dyn, get_obs = _ekf_moments_callbacks(model, emissions)
     filter_obj = moments_filter.build_filter(
         get_init, get_dyn, get_obs, associative=False,
     )
@@ -290,11 +290,11 @@ def infer_ukf(
     return _gaussian_posterior(states)
 
 
-def smooth_ukf(
+def smooth_ekf_moments(
     model: NonlinearGaussianSSM,
     emissions: Float[Array, "time obs"],
 ) -> GaussianSmoothedPosterior:
-    get_init, get_dyn, get_obs = _ukf_callbacks(model, emissions)
+    get_init, get_dyn, get_obs = _ekf_moments_callbacks(model, emissions)
     filter_obj = moments_filter.build_filter(
         get_init, get_dyn, get_obs, associative=False,
     )

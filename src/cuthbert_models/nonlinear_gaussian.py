@@ -3,11 +3,11 @@ from collections.abc import Callable
 import equinox as eqx
 from jaxtyping import Array, Float
 
-from cuthbert_models._methods import EKF, UKF, Particle
+from cuthbert_models._methods import EKF, Particle
 from cuthbert_models._types import GaussianPosterior, GaussianSmoothedPosterior
 
-Method = EKF | UKF | Particle
-SmoothMethod = EKF | UKF
+Method = EKF | Particle
+SmoothMethod = EKF
 
 
 class NonlinearGaussianSSM(eqx.Module):
@@ -43,14 +43,14 @@ class NonlinearGaussianSSM(eqx.Module):
     ) -> GaussianPosterior:
         from cuthbert_models._inference import (  # noqa: PLC0415
             infer_ekf,
+            infer_ekf_moments,
             infer_particle_gaussian,
-            infer_ukf,
         )
 
         if isinstance(method, EKF):
+            if method.linearization == "moments":
+                return infer_ekf_moments(self, emissions)
             return infer_ekf(self, emissions)
-        if isinstance(method, UKF):
-            return infer_ukf(self, emissions)
         return infer_particle_gaussian(
             self, emissions, key=method.key,
             n_particles=method.n_particles, resampling_fn=method.resampling_fn,
@@ -63,9 +63,9 @@ class NonlinearGaussianSSM(eqx.Module):
     ) -> GaussianSmoothedPosterior:
         from cuthbert_models._inference import (  # noqa: PLC0415
             smooth_ekf,
-            smooth_ukf,
+            smooth_ekf_moments,
         )
 
-        if isinstance(method, EKF):
-            return smooth_ekf(self, emissions)
-        return smooth_ukf(self, emissions)
+        if method.linearization == "moments":
+            return smooth_ekf_moments(self, emissions)
+        return smooth_ekf(self, emissions)

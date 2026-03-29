@@ -36,7 +36,7 @@ Models are `eqx.Module`s, so `jax.grad`, `jax.vmap`, `eqx.partition`, optax, num
 | Model | Infer | Smooth |
 |---|---|---|
 | `LinearGaussianSSM` | `Kalman`, `Particle` | `Kalman` |
-| `NonlinearGaussianSSM` | `EKF`, `UKF`, `Particle` | `EKF`, `UKF` |
+| `NonlinearGaussianSSM` | `EKF`, `Particle` | `EKF` |
 | `HMM` | `Forward`, `Particle` | `Forward` |
 
 Methods are frozen dataclasses:
@@ -44,8 +44,8 @@ Methods are frozen dataclasses:
 ```python
 Kalman()                    # sequential
 Kalman(parallel=True)       # associative scan
-EKF()
-UKF()
+EKF(linearization="taylor")
+EKF(linearization="moments")
 Forward(parallel=True)
 Particle(key=jax.random.key(0), n_particles=500, resampling_fn=resampling)
 ```

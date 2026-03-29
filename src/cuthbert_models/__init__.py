@@ -1,4 +1,4 @@
-from cuthbert_models._methods import EKF, UKF, Forward, Kalman, Particle
+from cuthbert_models._methods import EKF, Forward, Kalman, Particle
 from cuthbert_models._types import (
     DiscretePosterior,
     DiscreteSmoothedPosterior,
@@ -14,7 +14,6 @@ from cuthbert_models.params import TrainableCovariance, TrainableWeights
 __all__ = [
     "EKF",
     "HMM",
-    "UKF",
     "DiscretePosterior",
     "DiscreteSmoothedPosterior",
     "Forward",

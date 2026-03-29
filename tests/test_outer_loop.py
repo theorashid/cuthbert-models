@@ -15,7 +15,6 @@ from numpyro.infer.initialization import init_to_value
 
 from cuthbert_models import (
     EKF,
-    UKF,
     Kalman,
     LinearGaussianSSM,
     NonlinearGaussianSSM,
@@ -93,11 +92,15 @@ def test_optax_mle_kalman():
     assert jnp.all(eigenvals > 0)
 
 
-# --- EKF/UKF gradients flow ---
+# --- EKF gradients flow ---
 
 
-@pytest.mark.parametrize("method", [EKF(), UKF()], ids=["ekf", "ukf"])
-def test_ekf_ukf_gradients_are_finite(method):
+@pytest.mark.parametrize(
+    "method",
+    [EKF(linearization="taylor"), EKF(linearization="moments")],
+    ids=["ekf_taylor", "ekf_moments"],
+)
+def test_ekf_gradients_are_finite(method):
     emissions = _emissions(jr.key(0), n_time=50)
 
     def loss(F_param):
@@ -116,7 +119,7 @@ def test_ekf_ukf_gradients_are_finite(method):
     assert grad_F.shape == F_TRUE.shape
 
 
-# --- Numpyro SVI (Kalman and UKF) ---
+# --- Numpyro SVI (Kalman and EKF moments) ---
 
 
 def _numpyro_model_kalman(y, m0, P0, H, R):
@@ -191,7 +194,7 @@ def test_numpyro_svi_kalman():
     assert jnp.all(jnp.isfinite(map_params["dynamics_weights"]))
 
 
-def test_numpyro_svi_ukf():
+def test_numpyro_svi_ekf_moments():
     emissions = _emissions(jr.key(0), n_time=50)
 
     init_values = {
@@ -204,7 +207,7 @@ def test_numpyro_svi_ukf():
     )
     optimiser = optax.adam(5e-3)
     svi = SVI(_numpyro_model_nonlinear, guide, optimiser, loss=Trace_ELBO())
-    args = (emissions, UKF(), M0, P0, H, R)
+    args = (emissions, EKF(linearization="moments"), M0, P0, H, R)
 
     svi_result = svi.run(jr.key(42), 100, *args)
 

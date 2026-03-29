@@ -6,7 +6,6 @@ from cuthbertlib.resampling.systematic import resampling as systematic_resamplin
 
 from cuthbert_models import (
     EKF,
-    UKF,
     Kalman,
     LinearGaussianSSM,
     NonlinearGaussianSSM,
@@ -38,8 +37,8 @@ def _build_linear(params):
     )
 
 
-METHODS = [EKF(), UKF()]
-METHOD_IDS = ["ekf", "ukf"]
+METHODS = [EKF(linearization="taylor"), EKF(linearization="moments")]
+METHOD_IDS = ["ekf_taylor", "ekf_moments"]
 
 
 @pytest.mark.parametrize("method", METHODS, ids=METHOD_IDS)
@@ -139,7 +138,7 @@ def test_genuinely_nonlinear():
         emission_covariance=lambda _x, _t: jnp.eye(obs_dim) * 1.0,
     )
     emissions = jnp.ones((20, obs_dim))
-    for method in [EKF(), UKF()]:
+    for method in [EKF(linearization="taylor"), EKF(linearization="moments")]:
         result = model.infer(emissions, method=method)
         assert jnp.isfinite(result.marginal_log_likelihood)
         assert result.filtered_means.shape == (20, state_dim)
