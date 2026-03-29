@@ -5,7 +5,7 @@ import equinox as eqx
 from jaxtyping import Array, Float
 
 from cuthbert_models._methods import Kalman, Particle
-from cuthbert_models._types import Posterior, SmoothedPosterior
+from cuthbert_models._types import GaussianPosterior, GaussianSmoothedPosterior
 
 Method = Kalman | Particle
 
@@ -33,7 +33,7 @@ class LinearGaussianSSM(eqx.Module):
         self,
         emissions: Float[Array, "time obs"],
         method: Method,
-    ) -> Posterior:
+    ) -> GaussianPosterior:
         from cuthbert_models._inference import infer_kalman  # noqa: PLC0415
 
         if isinstance(method, Kalman):
@@ -57,7 +57,7 @@ class LinearGaussianSSM(eqx.Module):
         self,
         emissions: Float[Array, "time obs"],
         method: Kalman,
-    ) -> SmoothedPosterior:
+    ) -> GaussianSmoothedPosterior:
         from cuthbert_models._inference import smooth_kalman  # noqa: PLC0415
 
         return smooth_kalman(self, emissions, parallel=method.parallel)

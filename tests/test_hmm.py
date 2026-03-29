@@ -27,7 +27,6 @@ def _random_hmm_args(key, n_states: int = 3, n_time: int = 50):
         emission_log_likelihood=emission_log_likelihood,
     )
 
-    # Simulate
     def step(carry, key):
         state = carry
         k1, k2 = jr.split(key)
@@ -55,7 +54,7 @@ def test_log_likelihood_is_finite(method):
 def test_filtered_probs_are_valid(method):
     model, emissions = _random_hmm_args(jr.key(21))
     posterior = model.infer(emissions, method=method)
-    probs = posterior.filtered_means
+    probs = posterior.filtered_probs
     assert jnp.all(probs >= 0)
     assert jnp.allclose(probs.sum(axis=-1), 1.0, atol=1e-5)
 
@@ -64,7 +63,7 @@ def test_parallel_matches_sequential():
     model, emissions = _random_hmm_args(jr.key(22))
     seq = model.infer(emissions, method=Forward())
     par = model.infer(emissions, method=Forward(parallel=True))
-    assert jnp.allclose(seq.filtered_means, par.filtered_means, atol=1e-4)
+    assert jnp.allclose(seq.filtered_probs, par.filtered_probs, atol=1e-4)
     assert jnp.allclose(
         seq.marginal_log_likelihood, par.marginal_log_likelihood, atol=1e-2,
     )
@@ -104,12 +103,12 @@ def test_deterministic_hmm():
     )
     emissions = jnp.array([[5.0], [0.0], [5.0], [0.0]])
     posterior = model.infer(emissions, method=Forward())
-    assert posterior.filtered_means[0, 1] > 0.99
+    assert posterior.filtered_probs[0, 1] > 0.99
 
 
 def test_smoother_probs_are_valid():
     model, emissions = _random_hmm_args(jr.key(25))
     result = model.smooth(emissions, method=Forward())
-    assert jnp.all(result.smoothed_means >= 0)
-    assert jnp.allclose(result.smoothed_means.sum(axis=-1), 1.0, atol=1e-5)
+    assert jnp.all(result.smoothed_probs >= 0)
+    assert jnp.allclose(result.smoothed_probs.sum(axis=-1), 1.0, atol=1e-5)
     assert jnp.isfinite(result.marginal_log_likelihood)

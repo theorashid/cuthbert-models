@@ -1,8 +1,7 @@
-import jax
 import jax.numpy as jnp
 import jax.random as jr
 import pytest
-from jaxtyping import Array, Float
+from _helpers import random_lgssm_args
 
 from cuthbert_models import (
     EKF,
@@ -12,33 +11,6 @@ from cuthbert_models import (
     NonlinearGaussianSSM,
     Particle,
 )
-
-
-def _random_lgssm_args(
-    key: Array, state_dim: int = 2, obs_dim: int = 1, n_time: int = 50,
-) -> tuple:
-    keys = jr.split(key, 7)
-    m0 = jr.normal(keys[0], (state_dim,))
-    P0 = jnp.eye(state_dim) * jr.uniform(keys[1], minval=0.5, maxval=1.5)
-    F = jnp.eye(state_dim) + 0.1 * jr.normal(keys[2], (state_dim, state_dim))
-    Q = jnp.eye(state_dim) * jr.uniform(keys[3], minval=0.01, maxval=0.1)
-    H = jr.normal(keys[4], (obs_dim, state_dim))
-    R = jnp.eye(obs_dim) * jr.uniform(keys[5], minval=0.05, maxval=0.2)
-    states, emissions = _simulate(m0, F, Q, H, R, n_time, keys[6])
-    return (m0, P0, F, Q, H, R), states, emissions
-
-
-def _simulate(
-    m0: Float[Array, " s"], F, Q, H, R, n_time: int, key: Array,
-) -> tuple[Float[Array, "t s"], Float[Array, "t o"]]:
-    state_dim, obs_dim = F.shape[0], H.shape[0]
-    def step(state, key):
-        k1, k2 = jr.split(key)
-        next_state = F @ state + jr.multivariate_normal(k1, jnp.zeros(state_dim), Q)
-        obs = H @ next_state + jr.multivariate_normal(k2, jnp.zeros(obs_dim), R)
-        return next_state, (next_state, obs)
-    _, (states, emissions) = jax.lax.scan(step, m0, jr.split(key, n_time))
-    return states, emissions
 
 
 def _build_nonlinear(params):
@@ -71,7 +43,7 @@ METHOD_IDS = ["ekf", "ukf"]
 
 @pytest.mark.parametrize("method", METHODS, ids=METHOD_IDS)
 def test_finite_log_likelihood(method):
-    params, _, emissions = _random_lgssm_args(jr.key(10))
+    params, emissions = random_lgssm_args(jr.key(10))
     model = _build_nonlinear(params)
     ll = model.infer(emissions, method=method).marginal_log_likelihood
     assert jnp.isfinite(ll)
@@ -79,7 +51,7 @@ def test_finite_log_likelihood(method):
 
 @pytest.mark.parametrize("method", METHODS, ids=METHOD_IDS)
 def test_matches_kalman_on_linear(method):
-    params, _, emissions = _random_lgssm_args(jr.key(11))
+    params, emissions = random_lgssm_args(jr.key(11))
     linear = _build_linear(params)
     nonlinear = _build_nonlinear(params)
     kalman_result = linear.infer(emissions, method=Kalman())
@@ -98,7 +70,7 @@ def test_matches_kalman_on_linear(method):
 
 @pytest.mark.parametrize("method", METHODS, ids=METHOD_IDS)
 def test_covariance_is_symmetric_and_positive(method):
-    params, _, emissions = _random_lgssm_args(jr.key(12))
+    params, emissions = random_lgssm_args(jr.key(12))
     model = _build_nonlinear(params)
     covs = model.infer(emissions, method=method).filtered_covariances
     batch_transpose = jnp.transpose(covs, (0, 2, 1))
@@ -108,14 +80,14 @@ def test_covariance_is_symmetric_and_positive(method):
 
 
 def test_kalman_blocked():
-    params, _, emissions = _random_lgssm_args(jr.key(13))
+    params, emissions = random_lgssm_args(jr.key(13))
     model = _build_nonlinear(params)
     with pytest.raises(Exception):  # noqa: B017, PT011
         model.infer(emissions, method=Kalman())
 
 
 def test_invalid_method():
-    params, _, emissions = _random_lgssm_args(jr.key(14))
+    params, emissions = random_lgssm_args(jr.key(14))
     model = _build_nonlinear(params)
     with pytest.raises(Exception):  # noqa: B017, PT011
         model.infer(emissions, method="bogus")
@@ -139,7 +111,7 @@ def test_state_dependent_emission_covariance(method):
 
 
 def test_particle_filter_agrees_with_kalman():
-    params, _, emissions = _random_lgssm_args(jr.key(15))
+    params, emissions = random_lgssm_args(jr.key(15))
     nonlinear = _build_nonlinear(params)
     linear = _build_linear(params)
     kalman_ll = linear.infer(emissions, method=Kalman()).marginal_log_likelihood
@@ -169,7 +141,7 @@ def test_genuinely_nonlinear():
 
 @pytest.mark.parametrize("method", METHODS, ids=METHOD_IDS)
 def test_smoother_matches_kalman_on_linear(method):
-    params, _, emissions = _random_lgssm_args(jr.key(16))
+    params, emissions = random_lgssm_args(jr.key(16))
     linear = _build_linear(params)
     nonlinear = _build_nonlinear(params)
     kalman_result = linear.smooth(emissions, method=Kalman())

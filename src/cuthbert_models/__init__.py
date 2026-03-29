@@ -1,5 +1,12 @@
 from cuthbert_models._methods import EKF, UKF, Forward, Kalman, Particle
-from cuthbert_models._types import Posterior, SmoothedPosterior
+from cuthbert_models._types import (
+    DiscretePosterior,
+    DiscreteSmoothedPosterior,
+    GaussianPosterior,
+    GaussianSmoothedPosterior,
+    Posterior,
+    SmoothedPosterior,
+)
 from cuthbert_models.hmm import HMM
 from cuthbert_models.linear_gaussian import LinearGaussianSSM
 from cuthbert_models.nonlinear_gaussian import NonlinearGaussianSSM
@@ -9,7 +16,11 @@ __all__ = [
     "EKF",
     "HMM",
     "UKF",
+    "DiscretePosterior",
+    "DiscreteSmoothedPosterior",
     "Forward",
+    "GaussianPosterior",
+    "GaussianSmoothedPosterior",
     "Kalman",
     "LinearGaussianSSM",
     "NonlinearGaussianSSM",

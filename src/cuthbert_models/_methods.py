@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from jax import Array
+from jaxtyping import PRNGKeyArray
 
 
 @dataclass(frozen=True)
@@ -25,6 +25,6 @@ class Forward:
 
 @dataclass(frozen=True)
 class Particle:
-    key: Array
+    key: PRNGKeyArray
     n_particles: int = 100
     ess_threshold: float = 0.5

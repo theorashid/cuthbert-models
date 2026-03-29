@@ -30,7 +30,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "tests"]
 addopts = "--jaxtyping-packages=cuthbert_models,beartype.beartype"
 
 [tool.ruff]

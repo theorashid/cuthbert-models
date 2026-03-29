@@ -8,6 +8,7 @@ import numpyro
 import numpyro.distributions as dist
 import optax
 import pytest
+from _helpers import simulate_lgssm
 from numpyro.infer import SVI, Trace_ELBO
 from numpyro.infer.autoguide import AutoDelta
 from numpyro.infer.initialization import init_to_value
@@ -18,26 +19,10 @@ from cuthbert_models import (
     Kalman,
     LinearGaussianSSM,
     NonlinearGaussianSSM,
+    TrainableCovariance,
     TrainableWeights,
 )
 
-
-def _simulate(key, F_true, Q_true, H, R, m0, n_time):
-    state_dim, obs_dim = F_true.shape[0], H.shape[0]
-
-    def step(state, key):
-        k1, k2 = jr.split(key)
-        next_state = F_true @ state + jr.multivariate_normal(
-            k1, jnp.zeros(state_dim), Q_true,
-        )
-        obs = H @ next_state + jr.multivariate_normal(k2, jnp.zeros(obs_dim), R)
-        return next_state, obs
-
-    _, emissions = jax.lax.scan(step, m0, jr.split(key, n_time))
-    return emissions
-
-
-# Shared test data
 STATE_DIM, OBS_DIM = 2, 1
 DT = 1.0
 F_TRUE = jnp.array([[1.0, DT], [0.0, 1.0]])
@@ -48,11 +33,16 @@ M0 = jnp.array([0.0, 1.0])
 P0 = jnp.eye(STATE_DIM)
 
 
+def _emissions(key, n_time=200):
+    _, e = simulate_lgssm(M0, F_TRUE, Q_TRUE, H, R, n_time, key)
+    return e
+
+
 # --- Optax MLE (Kalman) ---
 
 
 def test_optax_mle_kalman():
-    emissions = _simulate(jr.key(0), F_TRUE, Q_TRUE, H, R, M0, 200)
+    emissions = _emissions(jr.key(0))
 
     F_init = F_TRUE + jr.normal(jr.key(1), F_TRUE.shape) * 0.05
     model = LinearGaussianSSM(
@@ -93,13 +83,66 @@ def test_optax_mle_kalman():
     assert jnp.allclose(F_learned, F_TRUE, atol=0.3)
 
 
+# --- Optax MLE with TrainableCovariance ---
+
+
+def test_optax_mle_trainable_covariance():
+    emissions = _emissions(jr.key(0))
+
+    F_init = F_TRUE + jr.normal(jr.key(1), F_TRUE.shape) * 0.05
+    Q_init = jnp.eye(STATE_DIM) * 0.1
+    model = LinearGaussianSSM(
+        initial_mean=M0,
+        initial_covariance=P0,
+        dynamics_weights=TrainableWeights(F_init),
+        dynamics_covariance=TrainableCovariance(Q_init),
+        emission_weights=lambda _t: H,
+        emission_covariance=lambda _t: R,
+    )
+
+    filter_spec = jax.tree.map(lambda _: False, model)
+    filter_spec = eqx.tree_at(
+        lambda m: (m.dynamics_weights, m.dynamics_covariance),
+        filter_spec,
+        replace=(True, True),
+    )
+    trainable, static = eqx.partition(model, filter_spec)
+
+    @eqx.filter_jit
+    def loss_fn(trainable):
+        m = eqx.combine(trainable, static)
+        return -m.infer(emissions, method=Kalman()).marginal_log_likelihood
+
+    optimiser = optax.adam(1e-2)
+    opt_state = optimiser.init(eqx.filter(trainable, eqx.is_array))
+
+    @eqx.filter_jit
+    def step(trainable, opt_state):
+        loss, grads = eqx.filter_value_and_grad(loss_fn)(trainable)
+        updates, opt_state = optimiser.update(grads, opt_state, trainable)
+        trainable = eqx.apply_updates(trainable, updates)
+        return trainable, opt_state, loss
+
+    initial_loss = None
+    for i in range(200):
+        trainable, opt_state, loss = step(trainable, opt_state)
+        if i == 0:
+            initial_loss = loss
+
+    assert loss < initial_loss
+
+    final_model = eqx.combine(trainable, static)
+    Q_learned = final_model.dynamics_covariance(jnp.array(0.0))
+    eigenvals = jnp.linalg.eigvalsh(Q_learned)
+    assert jnp.all(eigenvals > 0)
+
+
 # --- EKF/UKF gradients flow ---
 
 
 @pytest.mark.parametrize("method", [EKF(), UKF()], ids=["ekf", "ukf"])
 def test_ekf_ukf_gradients_are_finite(method):
-    """Verify that jax.grad flows through EKF/UKF for parameter estimation."""
-    emissions = _simulate(jr.key(0), F_TRUE, Q_TRUE, H, R, M0, 50)
+    emissions = _emissions(jr.key(0), n_time=50)
 
     def loss(F_param):
         model = NonlinearGaussianSSM(
@@ -171,7 +214,7 @@ def _numpyro_model_nonlinear(y, method, m0, P0, H, R):
 
 
 def test_numpyro_svi_kalman():
-    emissions = _simulate(jr.key(0), F_TRUE, Q_TRUE, H, R, M0, 50)
+    emissions = _emissions(jr.key(0), n_time=50)
 
     init_values = {
         "dynamics_weights": F_TRUE + 0.01 * jnp.eye(STATE_DIM),
@@ -193,7 +236,7 @@ def test_numpyro_svi_kalman():
 
 
 def test_numpyro_svi_ukf():
-    emissions = _simulate(jr.key(0), F_TRUE, Q_TRUE, H, R, M0, 50)
+    emissions = _emissions(jr.key(0), n_time=50)
 
     init_values = {
         "dynamics_weights": F_TRUE + 0.01 * jnp.eye(STATE_DIM),

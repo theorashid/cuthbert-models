@@ -5,7 +5,7 @@ import equinox as eqx
 from jaxtyping import Array, Float
 
 from cuthbert_models._methods import Forward, Particle
-from cuthbert_models._types import Posterior, SmoothedPosterior
+from cuthbert_models._types import DiscretePosterior, DiscreteSmoothedPosterior
 
 Method = Forward | Particle
 
@@ -32,7 +32,7 @@ class HMM(eqx.Module):
         self,
         emissions: Float[Array, "time obs"],
         method: Method,
-    ) -> Posterior:
+    ) -> DiscretePosterior:
         from cuthbert_models._inference import (  # noqa: PLC0415
             infer_forward,
             infer_particle_hmm,
@@ -49,7 +49,7 @@ class HMM(eqx.Module):
         self,
         emissions: Float[Array, "time obs"],
         method: Forward,
-    ) -> SmoothedPosterior:
+    ) -> DiscreteSmoothedPosterior:
         from cuthbert_models._inference import smooth_forward  # noqa: PLC0415
 
         return smooth_forward(self, emissions, parallel=method.parallel)

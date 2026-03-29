@@ -1,7 +1,5 @@
 import equinox as eqx
 from jaxtyping import Array, Float
-from numpyro.distributions import constraints
-from numpyro.distributions.transforms import biject_to
 
 
 class TrainableWeights(eqx.Module):
@@ -24,15 +22,22 @@ class TrainableCovariance(eqx.Module):
     """
 
     _unconstrained: Float[Array, " dim_tril"]
-    _constraint: constraints.Constraint = eqx.field(static=True)
+    _constraint: object = eqx.field(static=True)
 
     def __init__(
         self,
         matrix: Float[Array, "dim dim"],
-        constraint: constraints.Constraint = constraints.positive_definite,
+        constraint: object | None = None,
     ):
+        from numpyro.distributions import constraints  # noqa: PLC0415
+        from numpyro.distributions.transforms import biject_to  # noqa: PLC0415
+
+        if constraint is None:
+            constraint = constraints.positive_definite
         self._constraint = constraint
         self._unconstrained = biject_to(constraint).inv(matrix)
 
     def __call__(self, _t: Float[Array, ""]) -> Float[Array, "dim dim"]:
+        from numpyro.distributions.transforms import biject_to  # noqa: PLC0415
+
         return biject_to(self._constraint)(self._unconstrained)
