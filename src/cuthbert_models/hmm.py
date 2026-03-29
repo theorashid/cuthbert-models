@@ -8,7 +8,6 @@ from cuthbert_models._methods import Forward, Particle
 from cuthbert_models._types import Posterior, SmoothedPosterior
 
 Method = Forward | Particle
-_DEFAULT_METHOD = Forward()
 
 
 class HMM(eqx.Module):
@@ -32,7 +31,7 @@ class HMM(eqx.Module):
     def infer(
         self,
         emissions: Float[Array, "time obs"],
-        method: Method = _DEFAULT_METHOD,
+        method: Method,
     ) -> Posterior:
         from cuthbert_models._inference import (  # noqa: PLC0415
             infer_forward,
@@ -49,7 +48,7 @@ class HMM(eqx.Module):
     def smooth(
         self,
         emissions: Float[Array, "time obs"],
-        method: Forward = _DEFAULT_METHOD,
+        method: Forward,
     ) -> SmoothedPosterior:
         from cuthbert_models._inference import smooth_forward  # noqa: PLC0415
 

@@ -8,7 +8,6 @@ from cuthbert_models._methods import EKF, UKF, Particle
 from cuthbert_models._types import Posterior, SmoothedPosterior
 
 Method = EKF | UKF | Particle
-_DEFAULT_METHOD = EKF()
 
 
 class NonlinearGaussianSSM(eqx.Module):
@@ -34,7 +33,7 @@ class NonlinearGaussianSSM(eqx.Module):
     def infer(
         self,
         emissions: Float[Array, "time obs"],
-        method: Method = _DEFAULT_METHOD,
+        method: Method,
     ) -> Posterior:
         from cuthbert_models._inference import (  # noqa: PLC0415
             infer_ekf,
@@ -52,12 +51,11 @@ class NonlinearGaussianSSM(eqx.Module):
         )
 
     SmoothMethod = EKF | UKF
-    _DEFAULT_SMOOTH_METHOD = EKF()
 
     def smooth(
         self,
         emissions: Float[Array, "time obs"],
-        method: SmoothMethod = _DEFAULT_SMOOTH_METHOD,
+        method: SmoothMethod,
     ) -> SmoothedPosterior:
         from cuthbert_models._inference import (  # noqa: PLC0415
             smooth_ekf,

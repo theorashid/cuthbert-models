@@ -116,7 +116,7 @@ def test_vmap_over_data():
         emission_covariance=lambda _t: jnp.eye(obs_dim),
     )
     emissions = jr.normal(jr.key(0), (batch_size, timesteps, obs_dim))
-    results = jax.vmap(model.infer)(emissions)
+    results = jax.vmap(lambda e: model.infer(e, method=Kalman()))(emissions)
     assert results.filtered_means.shape == (batch_size, timesteps, state_dim)
     assert results.marginal_log_likelihood.shape == (batch_size,)
 

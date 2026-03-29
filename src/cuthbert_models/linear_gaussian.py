@@ -8,7 +8,6 @@ from cuthbert_models._methods import Kalman, Particle
 from cuthbert_models._types import Posterior, SmoothedPosterior
 
 Method = Kalman | Particle
-_DEFAULT_METHOD = Kalman()
 
 
 class LinearGaussianSSM(eqx.Module):
@@ -33,7 +32,7 @@ class LinearGaussianSSM(eqx.Module):
     def infer(
         self,
         emissions: Float[Array, "time obs"],
-        method: Method = _DEFAULT_METHOD,
+        method: Method,
     ) -> Posterior:
         from cuthbert_models._inference import infer_kalman  # noqa: PLC0415
 
@@ -57,7 +56,7 @@ class LinearGaussianSSM(eqx.Module):
     def smooth(
         self,
         emissions: Float[Array, "time obs"],
-        method: Kalman = _DEFAULT_METHOD,
+        method: Kalman,
     ) -> SmoothedPosterior:
         from cuthbert_models._inference import smooth_kalman  # noqa: PLC0415
 
