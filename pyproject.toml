@@ -1,7 +1,7 @@
 [project]
 name = "cuthbert-models"
 version = "0.0.1"
-description = "The white chocolate face. Model specification layer for cuthbert."
+description = "Model specification layer for cuthbert."
 readme = "README.md"
 license = "Apache-2.0"
 authors = [
