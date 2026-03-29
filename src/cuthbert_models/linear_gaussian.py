@@ -56,7 +56,7 @@ class LinearGaussianSSM(eqx.Module):
                 dynamics_fn=lambda x, t: self.dynamics_weights(t) @ x,
                 dynamics_covariance=self.dynamics_covariance,
                 emission_fn=lambda x, t: self.emission_weights(t) @ x,
-                emission_covariance=self.emission_covariance,
+                emission_covariance=lambda _x, t: self.emission_covariance(t),
             )
             if method == "ekf":
                 return infer_ekf(nonlinear, emissions)

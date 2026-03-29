@@ -115,17 +115,17 @@ def infer_ekf(
     def get_observation_func(state, mi):
         t = jnp.array(mi - 1, dtype=dtype)
         t_idx = jnp.array(mi - 1, dtype=jnp.int32)
-        obs_dim = emissions.shape[-1]
-        R_t = model.emission_covariance(t)
-        R_t_inv = jnp.linalg.solve(R_t, jnp.eye(obs_dim, dtype=dtype))
         y = emissions[t_idx]
+        x_lin = state.mean
 
         def obs_log_density(x, y_obs):
             predicted = model.emission_fn(x, t)
+            R_t = model.emission_covariance(x, t)
+            obs_dim = R_t.shape[0]
+            R_t_inv = jnp.linalg.solve(R_t, jnp.eye(obs_dim, dtype=dtype))
             diff = y_obs - predicted
             return -0.5 * diff @ R_t_inv @ diff
 
-        x_lin = state.mean
         return obs_log_density, x_lin, y
 
     filter_obj = taylor_filter.build_filter(
@@ -168,11 +168,10 @@ def infer_ukf(
     def get_observation_moments(state, mi):
         t = jnp.array(mi - 1, dtype=dtype)
         t_idx = jnp.array(mi - 1, dtype=jnp.int32)
-        R_t = model.emission_covariance(t)
-        chol_R_t = jnp.linalg.cholesky(R_t)
 
         def mean_and_chol_cov(x):
-            return model.emission_fn(x, t), chol_R_t
+            R_t = model.emission_covariance(x, t)
+            return model.emission_fn(x, t), jnp.linalg.cholesky(R_t)
 
         x_lin = state.mean
         y = emissions[t_idx]

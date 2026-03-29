@@ -13,7 +13,7 @@ def _build_nonlinear_model(params):
         dynamics_fn=lambda x, _t: F @ x,
         dynamics_covariance=lambda _t: Q,
         emission_fn=lambda x, _t: H @ x,
-        emission_covariance=lambda _t: R,
+        emission_covariance=lambda _x, _t: R,
     )
 
 
@@ -77,6 +77,24 @@ def test_invalid_method(noisy_motion_data):
         model.infer(emissions, method="kalman")
 
 
+@pytest.mark.parametrize("method", ["ekf", "ukf"])
+def test_state_dependent_emission_covariance(method):
+    """Emission covariance depends on state (generalised Gaussian SSM)."""
+    state_dim, obs_dim = 1, 1
+    model = NonlinearGaussianSSM(
+        initial_mean=jnp.array([1.0]),
+        initial_covariance=jnp.eye(state_dim) * 0.1,
+        dynamics_fn=lambda x, _t: x,
+        dynamics_covariance=lambda _t: jnp.eye(state_dim) * 0.1,
+        emission_fn=lambda x, _t: x,
+        emission_covariance=lambda x, _t: jnp.eye(obs_dim) * (0.1 + jnp.abs(x[0])),
+    )
+    emissions = jnp.ones((10, obs_dim))
+    result = model.infer(emissions, method=method)
+    assert jnp.isfinite(result.marginal_log_likelihood)
+    assert result.filtered_means.shape == (10, state_dim)
+
+
 def test_genuinely_nonlinear():
     """Test with a simple nonlinear model (quadratic dynamics)."""
     state_dim, obs_dim = 1, 1
@@ -86,7 +104,7 @@ def test_genuinely_nonlinear():
         dynamics_fn=lambda x, _t: 0.5 * x + 25.0 * x / (1.0 + x**2),
         dynamics_covariance=lambda _t: jnp.eye(state_dim) * 10.0,
         emission_fn=lambda x, _t: x**2 / 20.0,
-        emission_covariance=lambda _t: jnp.eye(obs_dim) * 1.0,
+        emission_covariance=lambda _x, _t: jnp.eye(obs_dim) * 1.0,
     )
     emissions = jnp.ones((20, obs_dim))
 

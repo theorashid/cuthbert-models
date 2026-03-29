@@ -16,10 +16,12 @@ class NonlinearGaussianSSM(eqx.Module):
 
     x_0 ~ N(initial_mean, initial_covariance)
     x_t = dynamics_fn(x_{t-1}, t) + N(0, dynamics_covariance(t))
-    y_t = emission_fn(x_t, t) + N(0, emission_covariance(t))
+    y_t = emission_fn(x_t, t) + N(0, emission_covariance(x_t, t))
 
-    dynamics_fn and emission_fn are arbitrary nonlinear functions.
-    Covariance fields are callables (t) -> Array.
+    dynamics_fn and emission_fn are nonlinear functions (x, t) -> Array.
+    dynamics_covariance is (t) -> Array.
+    emission_covariance is (x, t) -> Array (state-dependent, generalises
+    dynamax's GeneralizedGaussianSSM).
     """
 
     initial_mean: Float[Array, " state"]
@@ -27,7 +29,7 @@ class NonlinearGaussianSSM(eqx.Module):
     dynamics_fn: Callable[[Any, Any], Float[Array, " state"]]
     dynamics_covariance: Callable[[Any], Float[Array, "state state"]]
     emission_fn: Callable[[Any, Any], Float[Array, " obs"]]
-    emission_covariance: Callable[[Any], Float[Array, "obs obs"]]
+    emission_covariance: Callable[[Any, Any], Float[Array, "obs obs"]]
 
     def infer(
         self,

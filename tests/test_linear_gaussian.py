@@ -90,7 +90,7 @@ def test_vmap_over_data():
 
 def test_beartype_catches_wrong_shape():
     """Pass a 2D array where a 1D initial_mean is expected. beartype should catch it."""
-    with pytest.raises(Exception):  # noqa: B017
+    with pytest.raises(Exception):  # noqa: B017, PT011
         LinearGaussianSSM(
             initial_mean=jnp.ones((2, 2)),  # wrong: 2D instead of 1D
             initial_covariance=jnp.eye(2),
