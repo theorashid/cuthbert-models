@@ -1,5 +1,4 @@
 from collections.abc import Callable
-from typing import Any
 
 import equinox as eqx
 from jaxtyping import Array, Float
@@ -8,6 +7,7 @@ from cuthbert_models._methods import EKF, UKF, Particle
 from cuthbert_models._types import GaussianPosterior, GaussianSmoothedPosterior
 
 Method = EKF | UKF | Particle
+SmoothMethod = EKF | UKF
 
 
 class NonlinearGaussianSSM(eqx.Module):
@@ -25,10 +25,16 @@ class NonlinearGaussianSSM(eqx.Module):
 
     initial_mean: Float[Array, " state"]
     initial_covariance: Float[Array, "state state"]
-    dynamics_fn: Callable[[Any, Any], Float[Array, " state"]]
-    dynamics_covariance: Callable[[Any], Float[Array, "state state"]]
-    emission_fn: Callable[[Any, Any], Float[Array, " obs"]]
-    emission_covariance: Callable[[Any, Any], Float[Array, "obs obs"]]
+    dynamics_fn: Callable[
+        [Float[Array, " state"], Float[Array, ""]], Float[Array, " state"]
+    ]
+    dynamics_covariance: Callable[[Float[Array, ""]], Float[Array, "state state"]]
+    emission_fn: Callable[
+        [Float[Array, " state"], Float[Array, ""]], Float[Array, " obs"]
+    ]
+    emission_covariance: Callable[
+        [Float[Array, " state"], Float[Array, ""]], Float[Array, "obs obs"]
+    ]
 
     def infer(
         self,
@@ -49,8 +55,6 @@ class NonlinearGaussianSSM(eqx.Module):
             self, emissions, key=method.key,
             n_particles=method.n_particles, ess_threshold=method.ess_threshold,
         )
-
-    SmoothMethod = EKF | UKF
 
     def smooth(
         self,

@@ -1,5 +1,4 @@
 from collections.abc import Callable
-from typing import Any
 
 import equinox as eqx
 from jaxtyping import Array, Float
@@ -25,8 +24,10 @@ class HMM(eqx.Module):
     """
 
     initial_distribution: Float[Array, " states"]
-    transition_matrix: Callable[[Any], Float[Array, "states states"]]
-    emission_log_likelihood: Callable[[Any, Any], Float[Array, " states"]]
+    transition_matrix: Callable[[Float[Array, ""]], Float[Array, "states states"]]
+    emission_log_likelihood: Callable[
+        [Float[Array, " obs"], Float[Array, ""]], Float[Array, " states"]
+    ]
 
     def infer(
         self,

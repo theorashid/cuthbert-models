@@ -1,5 +1,4 @@
 from collections.abc import Callable
-from typing import Any
 
 import equinox as eqx
 from jaxtyping import Array, Float
@@ -24,10 +23,10 @@ class LinearGaussianSSM(eqx.Module):
 
     initial_mean: Float[Array, " state"]
     initial_covariance: Float[Array, "state state"]
-    dynamics_weights: Callable[[Any], Float[Array, "state state"]]
-    dynamics_covariance: Callable[[Any], Float[Array, "state state"]]
-    emission_weights: Callable[[Any], Float[Array, "obs state"]]
-    emission_covariance: Callable[[Any], Float[Array, "obs obs"]]
+    dynamics_weights: Callable[[Float[Array, ""]], Float[Array, "state state"]]
+    dynamics_covariance: Callable[[Float[Array, ""]], Float[Array, "state state"]]
+    emission_weights: Callable[[Float[Array, ""]], Float[Array, "obs state"]]
+    emission_covariance: Callable[[Float[Array, ""]], Float[Array, "obs obs"]]
 
     def infer(
         self,

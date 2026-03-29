@@ -6,10 +6,9 @@
 # cuthbert's native parameterisation is Cholesky factors. We decompose
 # the user's full covariance matrices here. If the model stored Cholesky
 # factors directly, these decompositions could be skipped.
-
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
+#
+# Note: callback factories and private helpers use untyped cuthbert state
+# objects -- these are cuthbert internals without public type exports.
 
 import jax
 import jax.numpy as jnp
@@ -33,12 +32,9 @@ from cuthbert_models._types import (
     GaussianPosterior,
     GaussianSmoothedPosterior,
 )
-
-if TYPE_CHECKING:
-    from cuthbert_models.hmm import HMM
-    from cuthbert_models.linear_gaussian import LinearGaussianSSM
-    from cuthbert_models.nonlinear_gaussian import NonlinearGaussianSSM
-
+from cuthbert_models.hmm import HMM
+from cuthbert_models.linear_gaussian import LinearGaussianSSM
+from cuthbert_models.nonlinear_gaussian import NonlinearGaussianSSM
 
 # ---------------------------------------------------------------------------
 # Shared posterior constructors
