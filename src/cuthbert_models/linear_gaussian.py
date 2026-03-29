@@ -32,37 +32,36 @@ class LinearGaussianSSM(eqx.Module):
         self,
         emissions: Float[Array, "time obs"],
         method: str = "kalman",
+        *,
+        key: Array | None = None,
+        n_particles: int = 100,
+        ess_threshold: float = 0.5,
     ) -> Posterior:
         method = _resolve_method(method)
 
-        from cuthbert_models._inference import (  # noqa: PLC0415
-            infer_ekf,
-            infer_kalman,
-            infer_ukf,
-        )
+        from cuthbert_models._inference import infer_kalman  # noqa: PLC0415
 
         if method == "kalman":
             return infer_kalman(self, emissions, parallel=False)
         if method == "kalman_parallel":
             return infer_kalman(self, emissions, parallel=True)
-        if method in ("ekf", "ukf"):
-            from cuthbert_models.nonlinear_gaussian import (  # noqa: PLC0415
-                NonlinearGaussianSSM,
-            )
 
-            nonlinear = NonlinearGaussianSSM(
-                initial_mean=self.initial_mean,
-                initial_covariance=self.initial_covariance,
-                dynamics_fn=lambda x, t: self.dynamics_weights(t) @ x,
-                dynamics_covariance=self.dynamics_covariance,
-                emission_fn=lambda x, t: self.emission_weights(t) @ x,
-                emission_covariance=lambda _x, t: self.emission_covariance(t),
-            )
-            if method == "ekf":
-                return infer_ekf(nonlinear, emissions)
-            return infer_ukf(nonlinear, emissions)
-        msg = "Particle filter not yet implemented for LinearGaussianSSM"
-        raise NotImplementedError(msg)
+        from cuthbert_models.nonlinear_gaussian import (  # noqa: PLC0415
+            NonlinearGaussianSSM,
+        )
+
+        nonlinear = NonlinearGaussianSSM(
+            initial_mean=self.initial_mean,
+            initial_covariance=self.initial_covariance,
+            dynamics_fn=lambda x, t: self.dynamics_weights(t) @ x,
+            dynamics_covariance=self.dynamics_covariance,
+            emission_fn=lambda x, t: self.emission_weights(t) @ x,
+            emission_covariance=lambda _x, t: self.emission_covariance(t),
+        )
+        return nonlinear.infer(
+            emissions, method=method, key=key,
+            n_particles=n_particles, ess_threshold=ess_threshold,
+        )
 
 
 def _resolve_method(method: str) -> str:

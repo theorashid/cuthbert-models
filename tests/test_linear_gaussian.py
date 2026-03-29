@@ -88,6 +88,33 @@ def test_vmap_over_data():
     assert results.marginal_log_likelihood.shape == (batch_size,)
 
 
+def test_particle_filter_finite_log_likelihood(noisy_motion_data):
+    params, emissions, _ = noisy_motion_data
+    model = _build_model(params)
+    result = model.infer(
+        emissions, method="particle", key=jax.random.key(0), n_particles=200,
+    )
+    assert jnp.isfinite(result.marginal_log_likelihood)
+    assert result.filtered_means.shape == (emissions.shape[0], params[0].shape[0])
+
+
+def test_particle_filter_agrees_with_kalman(noisy_motion_data):
+    params, emissions, _ = noisy_motion_data
+    model = _build_model(params)
+    kalman_ll = model.infer(emissions, method="kalman").marginal_log_likelihood
+    pf_ll = model.infer(
+        emissions, method="particle", key=jax.random.key(42), n_particles=500,
+    ).marginal_log_likelihood
+    assert jnp.allclose(kalman_ll, pf_ll, atol=15.0)
+
+
+def test_particle_requires_key(linear_motion_data):
+    params, emissions, _ = linear_motion_data
+    model = _build_model(params)
+    with pytest.raises(ValueError, match="requires a key"):
+        model.infer(emissions, method="particle")
+
+
 def test_beartype_catches_wrong_shape():
     """Pass a 2D array where a 1D initial_mean is expected. beartype should catch it."""
     with pytest.raises(Exception):  # noqa: B017, PT011

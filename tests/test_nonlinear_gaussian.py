@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 import pytest
 
@@ -93,6 +94,19 @@ def test_state_dependent_emission_covariance(method):
     result = model.infer(emissions, method=method)
     assert jnp.isfinite(result.marginal_log_likelihood)
     assert result.filtered_means.shape == (10, state_dim)
+
+
+def test_particle_filter_nonlinear(noisy_motion_data):
+    """Particle filter on a linear model, compare log-likelihood to Kalman."""
+    params, emissions, _ = noisy_motion_data
+    nonlinear = _build_nonlinear_model(params)
+    linear = _build_linear_model(params)
+    kalman_ll = linear.infer(emissions, method="kalman").marginal_log_likelihood
+    pf_result = nonlinear.infer(
+        emissions, method="particle", key=jax.random.key(99), n_particles=500,
+    )
+    assert jnp.isfinite(pf_result.marginal_log_likelihood)
+    assert jnp.allclose(kalman_ll, pf_result.marginal_log_likelihood, atol=15.0)
 
 
 def test_genuinely_nonlinear():

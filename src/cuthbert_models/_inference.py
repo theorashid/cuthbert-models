@@ -7,12 +7,16 @@
 # the user's full covariance matrices here. If the model stored Cholesky
 # factors directly, these decompositions could be skipped.
 
+import jax
 import jax.numpy as jnp
+import jax.random as jr
 from cuthbert import filter as cuthbert_filter
 from cuthbert.discrete import filter as discrete_filter
 from cuthbert.gaussian import kalman
 from cuthbert.gaussian.moments import filter as moments_filter
 from cuthbert.gaussian.taylor import filter as taylor_filter
+from cuthbert.smc import particle_filter as pf
+from cuthbertlib.resampling.systematic import resampling as systematic_resampling
 from jaxtyping import Array, Float
 
 from cuthbert_models._types import Posterior
@@ -222,6 +226,126 @@ def infer_forward(
     states = cuthbert_filter(filter_obj, model_inputs, parallel=parallel)
 
     filtered_probs = states.dist[1:]
+    marginal_log_likelihood = states.log_normalizing_constant[-1]
+
+    return Posterior(
+        marginal_log_likelihood=marginal_log_likelihood,
+        filtered_means=filtered_probs,
+        filtered_covariances=jnp.zeros_like(filtered_probs),
+    )
+
+
+# --- Particle filter: bootstrap PF via cuthbert.smc ---
+
+
+def infer_particle_gaussian(
+    model: NonlinearGaussianSSM,
+    emissions: Float[Array, "time obs"],
+    *,
+    key: jax.Array,
+    n_particles: int = 100,
+    ess_threshold: float = 0.5,
+) -> Posterior:
+    """Bootstrap particle filter for NonlinearGaussianSSM."""
+    dtype = model.initial_mean.dtype
+    state_dim = model.initial_mean.shape[0]
+    m0 = model.initial_mean
+    P0 = model.initial_covariance
+    chol_P0 = jnp.linalg.cholesky(P0)
+
+    def init_sample(key, _mi):
+        return m0 + chol_P0 @ jr.normal(key, (state_dim,), dtype=dtype)
+
+    def propagate_sample(key, state, mi):
+        t = jnp.array(mi - 1, dtype=dtype)
+        mean = model.dynamics_fn(state, t)
+        Q_t = model.dynamics_covariance(t)
+        chol_Q_t = jnp.linalg.cholesky(Q_t)
+        return mean + chol_Q_t @ jr.normal(key, (state_dim,), dtype=dtype)
+
+    def log_potential(_state_prev, state, mi):
+        t = jnp.array(mi - 1, dtype=dtype)
+        t_idx = jnp.array(mi - 1, dtype=jnp.int32)
+        y = emissions[t_idx]
+        predicted = model.emission_fn(state, t)
+        R_t = model.emission_covariance(state, t)
+        obs_dim = R_t.shape[0]
+        diff = y - predicted
+        chol_R = jnp.linalg.cholesky(R_t)
+        log_det = 2.0 * jnp.sum(jnp.log(jnp.diag(chol_R)))
+        solve = jnp.linalg.solve(R_t, diff)
+        return -0.5 * (obs_dim * jnp.log(2.0 * jnp.pi) + log_det + diff @ solve)
+
+    filter_obj = pf.build_filter(
+        init_sample,
+        propagate_sample,
+        log_potential,
+        n_filter_particles=n_particles,
+        resampling_fn=systematic_resampling,
+        ess_threshold=ess_threshold,
+    )
+    n_time = emissions.shape[0]
+    model_inputs = jnp.arange(n_time + 1)
+    states = cuthbert_filter(filter_obj, model_inputs, parallel=False, key=key)
+
+    # Weighted mean of particles
+    log_w = states.log_weights[1:]
+    w = jax.nn.softmax(log_w, axis=-1)
+    particles = states.particles[1:]
+    filtered_means = jnp.einsum("tn,tn...->t...", w, particles)
+    marginal_log_likelihood = states.log_normalizing_constant[-1]
+
+    return Posterior(
+        marginal_log_likelihood=marginal_log_likelihood,
+        filtered_means=filtered_means,
+        filtered_covariances=jnp.zeros_like(filtered_means),
+    )
+
+
+def infer_particle_hmm(
+    model: HMM,
+    emissions: Float[Array, "time ..."],
+    *,
+    key: jax.Array,
+    n_particles: int = 100,
+    ess_threshold: float = 0.5,
+) -> Posterior:
+    """Bootstrap particle filter for HMMs."""
+    dtype = model.initial_distribution.dtype
+    n_states = model.initial_distribution.shape[0]
+
+    def init_sample(key, _mi):
+        return jr.categorical(key, jnp.log(model.initial_distribution))
+
+    def propagate_sample(key, state, mi):
+        t = jnp.array(mi - 1, dtype=dtype)
+        A = model.transition_matrix(t)
+        return jr.categorical(key, jnp.log(A[state]))
+
+    def log_potential(_state_prev, state, mi):
+        t = jnp.array(mi - 1, dtype=dtype)
+        t_idx = jnp.array(mi - 1, dtype=jnp.int32)
+        log_liks = model.emission_log_likelihood(emissions[t_idx], t)
+        return log_liks[state]
+
+    filter_obj = pf.build_filter(
+        init_sample,
+        propagate_sample,
+        log_potential,
+        n_filter_particles=n_particles,
+        resampling_fn=systematic_resampling,
+        ess_threshold=ess_threshold,
+    )
+    n_time = emissions.shape[0]
+    model_inputs = jnp.arange(n_time + 1)
+    states = cuthbert_filter(filter_obj, model_inputs, parallel=False, key=key)
+
+    # Convert particle states to probability estimates
+    log_w = states.log_weights[1:]
+    w = jax.nn.softmax(log_w, axis=-1)
+    particle_states = states.particles[1:]
+    one_hot = jax.nn.one_hot(particle_states, n_states)
+    filtered_probs = jnp.einsum("tn,tnk->tk", w, one_hot)
     marginal_log_likelihood = states.log_normalizing_constant[-1]
 
     return Posterior(

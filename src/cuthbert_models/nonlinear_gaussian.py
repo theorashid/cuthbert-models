@@ -35,11 +35,16 @@ class NonlinearGaussianSSM(eqx.Module):
         self,
         emissions: Float[Array, "time obs"],
         method: str = "ekf",
+        *,
+        key: Array | None = None,
+        n_particles: int = 100,
+        ess_threshold: float = 0.5,
     ) -> Posterior:
         method = _resolve_method(method)
 
         from cuthbert_models._inference import (  # noqa: PLC0415
             infer_ekf,
+            infer_particle_gaussian,
             infer_ukf,
         )
 
@@ -47,8 +52,13 @@ class NonlinearGaussianSSM(eqx.Module):
             return infer_ekf(self, emissions)
         if method == "ukf":
             return infer_ukf(self, emissions)
-        msg = "Particle filter not yet implemented for NonlinearGaussianSSM"
-        raise NotImplementedError(msg)
+        if key is None:
+            msg = "method='particle' requires a key argument"
+            raise ValueError(msg)
+        return infer_particle_gaussian(
+            self, emissions, key=key,
+            n_particles=n_particles, ess_threshold=ess_threshold,
+        )
 
 
 def _resolve_method(method: str) -> str:

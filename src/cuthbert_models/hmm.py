@@ -31,17 +31,29 @@ class HMM(eqx.Module):
         self,
         emissions: Float[Array, "time obs"],
         method: str = "forward",
+        *,
+        key: Array | None = None,
+        n_particles: int = 100,
+        ess_threshold: float = 0.5,
     ) -> Posterior:
         method = _resolve_method(method)
 
-        from cuthbert_models._inference import infer_forward  # noqa: PLC0415
+        from cuthbert_models._inference import (  # noqa: PLC0415
+            infer_forward,
+            infer_particle_hmm,
+        )
 
         if method == "forward":
             return infer_forward(self, emissions, parallel=False)
         if method == "forward_parallel":
             return infer_forward(self, emissions, parallel=True)
-        msg = "Particle filter not yet implemented for HMM"
-        raise NotImplementedError(msg)
+        if key is None:
+            msg = "method='particle' requires a key argument"
+            raise ValueError(msg)
+        return infer_particle_hmm(
+            self, emissions, key=key,
+            n_particles=n_particles, ess_threshold=ess_threshold,
+        )
 
 
 def _resolve_method(method: str) -> str:

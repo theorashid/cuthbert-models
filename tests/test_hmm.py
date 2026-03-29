@@ -85,6 +85,16 @@ def test_invalid_method(hmm_data):
         model.infer(emissions, method="kalman")
 
 
+def test_particle_filter_hmm(hmm_data):
+    model, emissions = hmm_data
+    result = model.infer(
+        emissions, method="particle", key=jax.random.key(0), n_particles=500,
+    )
+    assert jnp.isfinite(result.marginal_log_likelihood)
+    forward_ll = model.infer(emissions, method="forward").marginal_log_likelihood
+    assert jnp.allclose(forward_ll, result.marginal_log_likelihood, atol=5.0)
+
+
 def test_deterministic_hmm():
     """An HMM where state 0 always emits y=0, state 1 always emits y=1."""
     pi0 = jnp.array([1.0, 0.0])
