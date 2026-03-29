@@ -36,6 +36,19 @@ from cuthbert_models.hmm import HMM
 from cuthbert_models.linear_gaussian import LinearGaussianSSM
 from cuthbert_models.nonlinear_gaussian import NonlinearGaussianSSM
 
+__all__ = [
+    "infer_ekf",
+    "infer_forward",
+    "infer_kalman",
+    "infer_particle_gaussian",
+    "infer_particle_hmm",
+    "infer_ukf",
+    "smooth_ekf",
+    "smooth_forward",
+    "smooth_kalman",
+    "smooth_ukf",
+]
+
 # ---------------------------------------------------------------------------
 # Shared posterior constructors
 # ---------------------------------------------------------------------------
@@ -413,16 +426,18 @@ def infer_particle_gaussian(
     log_w = states.log_weights[1:]
     w = jax.nn.softmax(log_w, axis=-1)
     particles = states.particles[1:]
-    filtered_means = jnp.einsum("tn,tn...->t...", w, particles)
+    filtered_means = jnp.einsum("tn,tns->ts", w, particles)
+
+    # Empirical weighted covariance: sum_n w_n (x_n - mean)(x_n - mean)^T
+    residuals = particles - filtered_means[:, None, :]
+    filtered_covariances = jnp.einsum(
+        "tn,tni,tnj->tij", w, residuals, residuals,
+    )
 
     return GaussianPosterior(
         marginal_log_likelihood=states.log_normalizing_constant[-1],
         filtered_means=filtered_means,
-        filtered_covariances=jnp.zeros_like(
-            jnp.broadcast_to(
-                jnp.eye(state_dim), (emissions.shape[0], state_dim, state_dim),
-            ),
-        ),
+        filtered_covariances=filtered_covariances,
     )
 
 

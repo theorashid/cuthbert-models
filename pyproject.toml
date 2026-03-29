@@ -13,6 +13,10 @@ dependencies = [
     "equinox>=0.13.6",
     "jax>=0.9.2",
     "jaxtyping>=0.3.9",
+]
+
+[project.optional-dependencies]
+numpyro = [
     "numpyro>=0.20.1",
 ]
 
@@ -23,6 +27,7 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "beartype>=0.22.5",
+    "numpyro>=0.20.1",
     "optax>=0.2.8",
     "pytest>=9.0.2",
     "ruff>=0.15.8",

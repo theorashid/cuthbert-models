@@ -2,6 +2,10 @@
 EM recipe: E-step via smoother, M-step via numerical optimisation of the ELBO.
 
 Based on cuthbert's parameter_estimation_em.md example.
+
+Note: the M-step ELBO is approximate -- it uses E[x_t]E[x_{t-1}]^T rather than
+E[x_t x_{t-1}^T] because cuthbert's smoother does not return lag-one cross-
+covariances. BFGS compensates over iterations, but the per-step ELBO is biased.
 """
 
 import jax.numpy as jnp
