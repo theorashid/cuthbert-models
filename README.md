@@ -115,11 +115,7 @@ model = LinearGaussianSSM(
 )
 ```
 
-`TrainableCovariance` requires `numpyro`, which is an optional dependency:
-
-```sh
-pip install cuthbert-models[numpyro]
-```
+`TrainableCovariance` requires `numpyro`, which is an optional dependency (`uv sync --extra numpyro`).
 
 ## Install
 
