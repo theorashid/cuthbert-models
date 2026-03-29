@@ -4,9 +4,11 @@ from typing import Any
 import equinox as eqx
 from jaxtyping import Array, Float
 
+from cuthbert_models._methods import Kalman, Particle
 from cuthbert_models._types import Posterior
 
-VALID_METHODS = {"kalman", "kalman_parallel", "ekf", "ukf", "particle"}
+Method = Kalman | Particle
+_DEFAULT_METHOD = Kalman()
 
 
 class LinearGaussianSSM(eqx.Module):
@@ -31,20 +33,12 @@ class LinearGaussianSSM(eqx.Module):
     def infer(
         self,
         emissions: Float[Array, "time obs"],
-        method: str = "kalman",
-        *,
-        key: Array | None = None,
-        n_particles: int = 100,
-        ess_threshold: float = 0.5,
+        method: Method = _DEFAULT_METHOD,
     ) -> Posterior:
-        method = _resolve_method(method)
-
         from cuthbert_models._inference import infer_kalman  # noqa: PLC0415
 
-        if method == "kalman":
-            return infer_kalman(self, emissions, parallel=False)
-        if method == "kalman_parallel":
-            return infer_kalman(self, emissions, parallel=True)
+        if isinstance(method, Kalman):
+            return infer_kalman(self, emissions, parallel=method.parallel)
 
         from cuthbert_models.nonlinear_gaussian import (  # noqa: PLC0415
             NonlinearGaussianSSM,
@@ -58,14 +52,4 @@ class LinearGaussianSSM(eqx.Module):
             emission_fn=lambda x, t: self.emission_weights(t) @ x,
             emission_covariance=lambda _x, t: self.emission_covariance(t),
         )
-        return nonlinear.infer(
-            emissions, method=method, key=key,
-            n_particles=n_particles, ess_threshold=ess_threshold,
-        )
-
-
-def _resolve_method(method: str) -> str:
-    if method not in VALID_METHODS:
-        msg = f"Unknown method {method!r}. Valid: {sorted(VALID_METHODS)}"
-        raise ValueError(msg)
-    return method
+        return nonlinear.infer(emissions, method=method)

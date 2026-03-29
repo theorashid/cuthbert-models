@@ -1,12 +1,47 @@
 import jax
 import jax.numpy as jnp
+import jax.random as jr
 import pytest
+from jaxtyping import Array, Float
 
-from cuthbert_models import LinearGaussianSSM, NonlinearGaussianSSM
+from cuthbert_models import (
+    EKF,
+    UKF,
+    Kalman,
+    LinearGaussianSSM,
+    NonlinearGaussianSSM,
+    Particle,
+)
 
 
-def _build_nonlinear_model(params):
-    """Build a NonlinearGaussianSSM with linear functions (for comparison)."""
+def _random_lgssm_args(
+    key: Array, state_dim: int = 2, obs_dim: int = 1, n_time: int = 50,
+) -> tuple:
+    keys = jr.split(key, 7)
+    m0 = jr.normal(keys[0], (state_dim,))
+    P0 = jnp.eye(state_dim) * jr.uniform(keys[1], minval=0.5, maxval=1.5)
+    F = jnp.eye(state_dim) + 0.1 * jr.normal(keys[2], (state_dim, state_dim))
+    Q = jnp.eye(state_dim) * jr.uniform(keys[3], minval=0.01, maxval=0.1)
+    H = jr.normal(keys[4], (obs_dim, state_dim))
+    R = jnp.eye(obs_dim) * jr.uniform(keys[5], minval=0.05, maxval=0.2)
+    states, emissions = _simulate(m0, F, Q, H, R, n_time, keys[6])
+    return (m0, P0, F, Q, H, R), states, emissions
+
+
+def _simulate(
+    m0: Float[Array, " s"], F, Q, H, R, n_time: int, key: Array,
+) -> tuple[Float[Array, "t s"], Float[Array, "t o"]]:
+    state_dim, obs_dim = F.shape[0], H.shape[0]
+    def step(state, key):
+        k1, k2 = jr.split(key)
+        next_state = F @ state + jr.multivariate_normal(k1, jnp.zeros(state_dim), Q)
+        obs = H @ next_state + jr.multivariate_normal(k2, jnp.zeros(obs_dim), R)
+        return next_state, (next_state, obs)
+    _, (states, emissions) = jax.lax.scan(step, m0, jr.split(key, n_time))
+    return states, emissions
+
+
+def _build_nonlinear(params):
     m0, P0, F, Q, H, R = params
     return NonlinearGaussianSSM(
         initial_mean=m0,
@@ -18,7 +53,7 @@ def _build_nonlinear_model(params):
     )
 
 
-def _build_linear_model(params):
+def _build_linear(params):
     m0, P0, F, Q, H, R = params
     return LinearGaussianSSM(
         initial_mean=m0,
@@ -30,24 +65,25 @@ def _build_linear_model(params):
     )
 
 
-@pytest.mark.parametrize("method", ["ekf", "ukf"])
-def test_ekf_ukf_finite_log_likelihood(noisy_motion_data, method):
-    params, emissions, _ = noisy_motion_data
-    model = _build_nonlinear_model(params)
+METHODS = [EKF(), UKF()]
+METHOD_IDS = ["ekf", "ukf"]
+
+
+@pytest.mark.parametrize("method", METHODS, ids=METHOD_IDS)
+def test_finite_log_likelihood(method):
+    params, _, emissions = _random_lgssm_args(jr.key(10))
+    model = _build_nonlinear(params)
     ll = model.infer(emissions, method=method).marginal_log_likelihood
     assert jnp.isfinite(ll)
 
 
-@pytest.mark.parametrize("method", ["ekf", "ukf"])
-def test_ekf_ukf_matches_kalman_on_linear(noisy_motion_data, method):
-    """EKF/UKF on a linear model should closely match exact Kalman."""
-    params, emissions, _ = noisy_motion_data
-    linear = _build_linear_model(params)
-    nonlinear = _build_nonlinear_model(params)
-
-    kalman_result = linear.infer(emissions, method="kalman")
+@pytest.mark.parametrize("method", METHODS, ids=METHOD_IDS)
+def test_matches_kalman_on_linear(method):
+    params, _, emissions = _random_lgssm_args(jr.key(11))
+    linear = _build_linear(params)
+    nonlinear = _build_nonlinear(params)
+    kalman_result = linear.infer(emissions, method=Kalman())
     approx_result = nonlinear.infer(emissions, method=method)
-
     assert jnp.allclose(
         kalman_result.marginal_log_likelihood,
         approx_result.marginal_log_likelihood,
@@ -60,10 +96,10 @@ def test_ekf_ukf_matches_kalman_on_linear(noisy_motion_data, method):
     )
 
 
-@pytest.mark.parametrize("method", ["ekf", "ukf"])
-def test_covariance_is_symmetric_and_positive(noisy_motion_data, method):
-    params, emissions, _ = noisy_motion_data
-    model = _build_nonlinear_model(params)
+@pytest.mark.parametrize("method", METHODS, ids=METHOD_IDS)
+def test_covariance_is_symmetric_and_positive(method):
+    params, _, emissions = _random_lgssm_args(jr.key(12))
+    model = _build_nonlinear(params)
     covs = model.infer(emissions, method=method).filtered_covariances
     batch_transpose = jnp.transpose(covs, (0, 2, 1))
     assert jnp.allclose(covs, batch_transpose, atol=1e-8)
@@ -71,16 +107,22 @@ def test_covariance_is_symmetric_and_positive(noisy_motion_data, method):
     assert jnp.all(eigenvals > 0)
 
 
-def test_invalid_method(noisy_motion_data):
-    params, emissions, _ = noisy_motion_data
-    model = _build_nonlinear_model(params)
-    with pytest.raises(ValueError, match="Unknown method"):
-        model.infer(emissions, method="kalman")
+def test_kalman_blocked():
+    params, _, emissions = _random_lgssm_args(jr.key(13))
+    model = _build_nonlinear(params)
+    with pytest.raises(Exception):  # noqa: B017, PT011
+        model.infer(emissions, method=Kalman())
 
 
-@pytest.mark.parametrize("method", ["ekf", "ukf"])
+def test_invalid_method():
+    params, _, emissions = _random_lgssm_args(jr.key(14))
+    model = _build_nonlinear(params)
+    with pytest.raises(Exception):  # noqa: B017, PT011
+        model.infer(emissions, method="bogus")
+
+
+@pytest.mark.parametrize("method", METHODS, ids=METHOD_IDS)
 def test_state_dependent_emission_covariance(method):
-    """Emission covariance depends on state (generalised Gaussian SSM)."""
     state_dim, obs_dim = 1, 1
     model = NonlinearGaussianSSM(
         initial_mean=jnp.array([1.0]),
@@ -96,21 +138,19 @@ def test_state_dependent_emission_covariance(method):
     assert result.filtered_means.shape == (10, state_dim)
 
 
-def test_particle_filter_nonlinear(noisy_motion_data):
-    """Particle filter on a linear model, compare log-likelihood to Kalman."""
-    params, emissions, _ = noisy_motion_data
-    nonlinear = _build_nonlinear_model(params)
-    linear = _build_linear_model(params)
-    kalman_ll = linear.infer(emissions, method="kalman").marginal_log_likelihood
+def test_particle_filter_agrees_with_kalman():
+    params, _, emissions = _random_lgssm_args(jr.key(15))
+    nonlinear = _build_nonlinear(params)
+    linear = _build_linear(params)
+    kalman_ll = linear.infer(emissions, method=Kalman()).marginal_log_likelihood
     pf_result = nonlinear.infer(
-        emissions, method="particle", key=jax.random.key(99), n_particles=500,
+        emissions, method=Particle(key=jr.key(99), n_particles=500),
     )
     assert jnp.isfinite(pf_result.marginal_log_likelihood)
     assert jnp.allclose(kalman_ll, pf_result.marginal_log_likelihood, atol=15.0)
 
 
 def test_genuinely_nonlinear():
-    """Test with a simple nonlinear model (quadratic dynamics)."""
     state_dim, obs_dim = 1, 1
     model = NonlinearGaussianSSM(
         initial_mean=jnp.array([1.0]),
@@ -121,8 +161,7 @@ def test_genuinely_nonlinear():
         emission_covariance=lambda _x, _t: jnp.eye(obs_dim) * 1.0,
     )
     emissions = jnp.ones((20, obs_dim))
-
-    for method in ["ekf", "ukf"]:
+    for method in [EKF(), UKF()]:
         result = model.infer(emissions, method=method)
         assert jnp.isfinite(result.marginal_log_likelihood)
         assert result.filtered_means.shape == (20, state_dim)

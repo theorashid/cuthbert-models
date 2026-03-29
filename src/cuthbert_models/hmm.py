@@ -4,9 +4,11 @@ from typing import Any
 import equinox as eqx
 from jaxtyping import Array, Float
 
+from cuthbert_models._methods import Forward, Particle
 from cuthbert_models._types import Posterior
 
-VALID_METHODS = {"forward", "forward_parallel", "particle"}
+Method = Forward | Particle
+_DEFAULT_METHOD = Forward()
 
 
 class HMM(eqx.Module):
@@ -30,34 +32,16 @@ class HMM(eqx.Module):
     def infer(
         self,
         emissions: Float[Array, "time obs"],
-        method: str = "forward",
-        *,
-        key: Array | None = None,
-        n_particles: int = 100,
-        ess_threshold: float = 0.5,
+        method: Method = _DEFAULT_METHOD,
     ) -> Posterior:
-        method = _resolve_method(method)
-
         from cuthbert_models._inference import (  # noqa: PLC0415
             infer_forward,
             infer_particle_hmm,
         )
 
-        if method == "forward":
-            return infer_forward(self, emissions, parallel=False)
-        if method == "forward_parallel":
-            return infer_forward(self, emissions, parallel=True)
-        if key is None:
-            msg = "method='particle' requires a key argument"
-            raise ValueError(msg)
+        if isinstance(method, Forward):
+            return infer_forward(self, emissions, parallel=method.parallel)
         return infer_particle_hmm(
-            self, emissions, key=key,
-            n_particles=n_particles, ess_threshold=ess_threshold,
+            self, emissions, key=method.key,
+            n_particles=method.n_particles, ess_threshold=method.ess_threshold,
         )
-
-
-def _resolve_method(method: str) -> str:
-    if method not in VALID_METHODS:
-        msg = f"Unknown method {method!r}. Valid: {sorted(VALID_METHODS)}"
-        raise ValueError(msg)
-    return method

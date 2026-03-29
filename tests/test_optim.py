@@ -3,7 +3,7 @@ import jax
 import jax.numpy as jnp
 import optax
 
-from cuthbert_models import LinearGaussianSSM, TrainableWeights
+from cuthbert_models import Kalman, LinearGaussianSSM, TrainableWeights
 
 
 def test_mle_learns_dynamics():
@@ -56,7 +56,7 @@ def test_mle_learns_dynamics():
     @eqx.filter_jit
     def loss_fn(trainable):
         model = eqx.combine(trainable, static)
-        return -model.infer(emissions).marginal_log_likelihood
+        return -model.infer(emissions, method=Kalman()).marginal_log_likelihood
 
     optimiser = optax.adam(1e-2)
     opt_state = optimiser.init(eqx.filter(trainable, eqx.is_array))

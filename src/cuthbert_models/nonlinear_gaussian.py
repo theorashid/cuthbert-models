@@ -4,9 +4,11 @@ from typing import Any
 import equinox as eqx
 from jaxtyping import Array, Float
 
+from cuthbert_models._methods import EKF, UKF, Particle
 from cuthbert_models._types import Posterior
 
-VALID_METHODS = {"ekf", "ukf", "particle"}
+Method = EKF | UKF | Particle
+_DEFAULT_METHOD = EKF()
 
 
 class NonlinearGaussianSSM(eqx.Module):
@@ -18,10 +20,8 @@ class NonlinearGaussianSSM(eqx.Module):
     x_t = dynamics_fn(x_{t-1}, t) + N(0, dynamics_covariance(t))
     y_t = emission_fn(x_t, t) + N(0, emission_covariance(x_t, t))
 
-    dynamics_fn and emission_fn are nonlinear functions (x, t) -> Array.
-    dynamics_covariance is (t) -> Array.
-    emission_covariance is (x, t) -> Array (state-dependent, generalises
-    dynamax's GeneralizedGaussianSSM).
+    emission_covariance takes (x, t) so it can be state-dependent,
+    subsuming dynamax's GeneralizedGaussianSSM.
     """
 
     initial_mean: Float[Array, " state"]
@@ -34,35 +34,22 @@ class NonlinearGaussianSSM(eqx.Module):
     def infer(
         self,
         emissions: Float[Array, "time obs"],
-        method: str = "ekf",
-        *,
-        key: Array | None = None,
-        n_particles: int = 100,
-        ess_threshold: float = 0.5,
+        method: Method = _DEFAULT_METHOD,
     ) -> Posterior:
-        method = _resolve_method(method)
-
         from cuthbert_models._inference import (  # noqa: PLC0415
             infer_ekf,
             infer_particle_gaussian,
             infer_ukf,
         )
 
-        if method == "ekf":
+        if isinstance(method, EKF):
             return infer_ekf(self, emissions)
-        if method == "ukf":
+        if isinstance(method, UKF):
             return infer_ukf(self, emissions)
-        if key is None:
-            msg = "method='particle' requires a key argument"
-            raise ValueError(msg)
         return infer_particle_gaussian(
-            self, emissions, key=key,
-            n_particles=n_particles, ess_threshold=ess_threshold,
+            self, emissions, key=method.key,
+            n_particles=method.n_particles, ess_threshold=method.ess_threshold,
         )
 
 
-def _resolve_method(method: str) -> str:
-    if method not in VALID_METHODS:
-        msg = f"Unknown method {method!r}. Valid: {sorted(VALID_METHODS)}"
-        raise ValueError(msg)
-    return method
+
