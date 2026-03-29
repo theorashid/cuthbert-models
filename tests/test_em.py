@@ -1,7 +1,10 @@
 """
-EM recipe: E-step via smoother, M-step via numerical optimisation of the ELBO.
+EM recipe: E-step via Kalman smoother, M-step via BFGS on a closed-form ELBO.
 
-Based on cuthbert's parameter_estimation_em.md example.
+Inspired by cuthbert's parameter_estimation_em.md example, but much simpler:
+that example uses a nonlinear SSM with Gauss-Hermite quadrature for intractable
+M-step integrals; here we use a linear Gaussian SSM where the ELBO has a
+closed-form expression in terms of smoother sufficient statistics.
 
 Note: the M-step ELBO is approximate -- it uses E[x_t]E[x_{t-1}]^T rather than
 E[x_t x_{t-1}^T] because cuthbert's smoother does not return lag-one cross-

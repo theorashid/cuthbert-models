@@ -45,51 +45,6 @@ def test_optax_mle_kalman():
     emissions = _emissions(jr.key(0))
 
     F_init = F_TRUE + jr.normal(jr.key(1), F_TRUE.shape) * 0.05
-    model = LinearGaussianSSM(
-        initial_mean=M0,
-        initial_covariance=P0,
-        dynamics_weights=TrainableWeights(F_init),
-        dynamics_covariance=lambda _t: Q_TRUE,
-        emission_weights=lambda _t: H,
-        emission_covariance=lambda _t: R,
-    )
-
-    filter_spec = jax.tree.map(lambda _: False, model)
-    filter_spec = eqx.tree_at(
-        lambda m: m.dynamics_weights, filter_spec, replace=True,
-    )
-    trainable, static = eqx.partition(model, filter_spec)
-
-    @eqx.filter_jit
-    def loss_fn(trainable):
-        m = eqx.combine(trainable, static)
-        return -m.infer(emissions, method=Kalman()).marginal_log_likelihood
-
-    optimiser = optax.adam(1e-2)
-    opt_state = optimiser.init(eqx.filter(trainable, eqx.is_array))
-
-    @eqx.filter_jit
-    def step(trainable, opt_state):
-        loss, grads = eqx.filter_value_and_grad(loss_fn)(trainable)
-        updates, opt_state = optimiser.update(grads, opt_state, trainable)
-        trainable = eqx.apply_updates(trainable, updates)
-        return trainable, opt_state, loss
-
-    for _ in range(200):
-        trainable, opt_state, _loss = step(trainable, opt_state)
-
-    final_model = eqx.combine(trainable, static)
-    F_learned = final_model.dynamics_weights(jnp.array(0.0))
-    assert jnp.allclose(F_learned, F_TRUE, atol=0.3)
-
-
-# --- Optax MLE with TrainableCovariance ---
-
-
-def test_optax_mle_trainable_covariance():
-    emissions = _emissions(jr.key(0))
-
-    F_init = F_TRUE + jr.normal(jr.key(1), F_TRUE.shape) * 0.05
     Q_init = jnp.eye(STATE_DIM) * 0.1
     model = LinearGaussianSSM(
         initial_mean=M0,
@@ -235,6 +190,28 @@ def test_numpyro_svi_kalman():
     assert jnp.all(jnp.isfinite(map_params["dynamics_weights"]))
 
 
+def test_numpyro_svi_ukf():
+    emissions = _emissions(jr.key(0), n_time=50)
+
+    init_values = {
+        "dynamics_weights": F_TRUE + 0.01 * jnp.eye(STATE_DIM),
+        "dynamics_covariance": jnp.eye(STATE_DIM) * 0.1,
+    }
+    guide = AutoDelta(
+        _numpyro_model_nonlinear,
+        init_loc_fn=init_to_value(values=init_values),
+    )
+    optimiser = optax.adam(5e-3)
+    svi = SVI(_numpyro_model_nonlinear, guide, optimiser, loss=Trace_ELBO())
+    args = (emissions, UKF(), M0, P0, H, R)
+
+    svi_result = svi.run(jr.key(42), 100, *args)
+
+    assert svi_result.losses[-1] < svi_result.losses[0]
+    map_params = guide.median(svi_result.params)
+    assert jnp.all(jnp.isfinite(map_params["dynamics_weights"]))
+
+
 # --- Differentiable particle filter ---
 # Requires cuthbertlib.autodiff.stop_gradient_decorator, which is on
 # cuthbertlib main but not yet released (need cuthbertlib >= 0.0.9).
@@ -270,23 +247,3 @@ def test_numpyro_svi_kalman():
 #     grad_F = jax.grad(loss)(F_TRUE)
 #     assert jnp.all(jnp.isfinite(grad_F))
 #     assert grad_F.shape == F_TRUE.shape
-def test_numpyro_svi_ukf():
-    emissions = _emissions(jr.key(0), n_time=50)
-
-    init_values = {
-        "dynamics_weights": F_TRUE + 0.01 * jnp.eye(STATE_DIM),
-        "dynamics_covariance": jnp.eye(STATE_DIM) * 0.1,
-    }
-    guide = AutoDelta(
-        _numpyro_model_nonlinear,
-        init_loc_fn=init_to_value(values=init_values),
-    )
-    optimiser = optax.adam(5e-3)
-    svi = SVI(_numpyro_model_nonlinear, guide, optimiser, loss=Trace_ELBO())
-    args = (emissions, UKF(), M0, P0, H, R)
-
-    svi_result = svi.run(jr.key(42), 100, *args)
-
-    assert svi_result.losses[-1] < svi_result.losses[0]
-    map_params = guide.median(svi_result.params)
-    assert jnp.all(jnp.isfinite(map_params["dynamics_weights"]))

@@ -86,6 +86,9 @@ ignore = [
     "PLR2004",
 ]
 
+[tool.ty.environment]
+extra-paths = ["src", "tests"]
+
 [tool.ty.rules]
 # cuthbert's Protocol types use ArrayTreeLike which ty can't resolve
 # for inner closures, producing false-positive invalid-argument-type errors
