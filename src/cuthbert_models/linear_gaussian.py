@@ -45,10 +45,22 @@ class LinearGaussianSSM(eqx.Module):
             return infer_kalman(self, emissions, parallel=False)
         if method == "kalman_parallel":
             return infer_kalman(self, emissions, parallel=True)
-        if method == "ekf":
-            return infer_ekf(self, emissions)
-        if method == "ukf":
-            return infer_ukf(self, emissions)
+        if method in ("ekf", "ukf"):
+            from cuthbert_models.nonlinear_gaussian import (  # noqa: PLC0415
+                NonlinearGaussianSSM,
+            )
+
+            nonlinear = NonlinearGaussianSSM(
+                initial_mean=self.initial_mean,
+                initial_covariance=self.initial_covariance,
+                dynamics_fn=lambda x, t: self.dynamics_weights(t) @ x,
+                dynamics_covariance=self.dynamics_covariance,
+                emission_fn=lambda x, t: self.emission_weights(t) @ x,
+                emission_covariance=self.emission_covariance,
+            )
+            if method == "ekf":
+                return infer_ekf(nonlinear, emissions)
+            return infer_ukf(nonlinear, emissions)
         msg = "Particle filter not yet implemented for LinearGaussianSSM"
         raise NotImplementedError(msg)
 

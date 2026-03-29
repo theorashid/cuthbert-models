@@ -86,3 +86,16 @@ def test_vmap_over_data():
     results = jax.vmap(model.infer)(emissions)
     assert results.filtered_means.shape == (batch_size, timesteps, state_dim)
     assert results.marginal_log_likelihood.shape == (batch_size,)
+
+
+def test_beartype_catches_wrong_shape():
+    """Pass a 2D array where a 1D initial_mean is expected. beartype should catch it."""
+    with pytest.raises(Exception):  # noqa: B017
+        LinearGaussianSSM(
+            initial_mean=jnp.ones((2, 2)),  # wrong: 2D instead of 1D
+            initial_covariance=jnp.eye(2),
+            dynamics_weights=lambda _t: jnp.eye(2),
+            dynamics_covariance=lambda _t: jnp.eye(2),
+            emission_weights=lambda _t: jnp.eye(2),
+            emission_covariance=lambda _t: jnp.eye(2),
+        )

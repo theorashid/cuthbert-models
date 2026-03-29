@@ -7,10 +7,6 @@
 # the user's full covariance matrices here. If the model stored Cholesky
 # factors directly, these decompositions could be skipped.
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
 import jax.numpy as jnp
 from cuthbert import filter as cuthbert_filter
 from cuthbert.discrete import filter as discrete_filter
@@ -20,11 +16,9 @@ from cuthbert.gaussian.taylor import filter as taylor_filter
 from jaxtyping import Array, Float
 
 from cuthbert_models._types import Posterior
-
-if TYPE_CHECKING:
-    from cuthbert_models.hmm import HMM
-    from cuthbert_models.linear_gaussian import LinearGaussianSSM
-    from cuthbert_models.nonlinear_gaussian import NonlinearGaussianSSM
+from cuthbert_models.hmm import HMM
+from cuthbert_models.linear_gaussian import LinearGaussianSSM
+from cuthbert_models.nonlinear_gaussian import NonlinearGaussianSSM
 
 
 def _gaussian_posterior(states) -> Posterior:
