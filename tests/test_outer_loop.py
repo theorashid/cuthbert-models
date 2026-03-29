@@ -235,6 +235,41 @@ def test_numpyro_svi_kalman():
     assert jnp.all(jnp.isfinite(map_params["dynamics_weights"]))
 
 
+# --- Differentiable particle filter ---
+# Requires cuthbertlib.autodiff.stop_gradient_decorator, which is on
+# cuthbertlib main but not yet released (need cuthbertlib >= 0.0.9).
+# The decorator wraps a Resampling function to stop gradients through
+# the resampling step, making jax.grad flow through the particle filter.
+#
+# def test_differentiable_particle_filter():
+#     from cuthbertlib.autodiff import stop_gradient_decorator
+#     from cuthbertlib.resampling.systematic import resampling as systematic
+#
+#     diff_resampling = stop_gradient_decorator(systematic)
+#
+#     emissions = _emissions(jr.key(0), n_time=50)
+#
+#     def loss(F_param):
+#         model = NonlinearGaussianSSM(
+#             initial_mean=M0,
+#             initial_covariance=P0,
+#             dynamics_fn=lambda x, _t: F_param @ x,
+#             dynamics_covariance=lambda _t: Q_TRUE,
+#             emission_fn=lambda x, _t: H @ x,
+#             emission_covariance=lambda _x, _t: R,
+#         )
+#         return -model.infer(
+#             emissions,
+#             method=Particle(
+#                 key=jr.key(42),
+#                 n_particles=200,
+#                 resampling_fn=diff_resampling,
+#             ),
+#         ).marginal_log_likelihood
+#
+#     grad_F = jax.grad(loss)(F_TRUE)
+#     assert jnp.all(jnp.isfinite(grad_F))
+#     assert grad_F.shape == F_TRUE.shape
 def test_numpyro_svi_ukf():
     emissions = _emissions(jr.key(0), n_time=50)
 
