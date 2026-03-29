@@ -123,14 +123,17 @@ pip install cuthbert-models[numpyro]
 
 ## Install
 
+Not yet on PyPI. Install from source:
+
 ```sh
-pip install cuthbert-models
+git clone https://github.com/state-space-models/cuthbert-models.git
+cd cuthbert-models
+uv sync --dev
 ```
 
 ## Dev
 
 ```sh
-uv sync --dev
 uv run ruff check --fix
 uv run pytest
 ```
