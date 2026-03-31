@@ -216,6 +216,52 @@ def test_numpyro_svi_ekf_moments():
     assert jnp.all(jnp.isfinite(map_params["dynamics_weights"]))
 
 
+# --- Forecasting with fitted SVI model ---
+
+
+def test_forecast_after_svi():
+    """Fit dynamics via SVI, then forecast by appending NaN emissions."""
+    emissions = _emissions(jr.key(0), n_time=100)
+    horizon = 10
+
+    init_values = {
+        "dynamics_weights": F_TRUE + 0.01 * jnp.eye(STATE_DIM),
+        "dynamics_covariance": jnp.eye(STATE_DIM) * 0.1,
+    }
+    guide = AutoDelta(
+        _numpyro_model_kalman,
+        init_loc_fn=init_to_value(values=init_values),
+    )
+    svi = SVI(_numpyro_model_kalman, guide, optax.adam(5e-3), loss=Trace_ELBO())
+    svi_result = svi.run(jr.key(42), 200, emissions, M0, P0, H, R)
+    params = guide.median(svi_result.params)
+
+    F_learned = params["dynamics_weights"]
+    Q_learned = params["dynamics_covariance"]
+
+    forecast_emissions = jnp.concatenate(
+        [emissions, jnp.full((horizon, OBS_DIM), jnp.nan)],
+    )
+    model = LinearGaussianSSM(
+        initial_mean=M0,
+        initial_covariance=P0,
+        dynamics_weights=lambda _t: F_learned,
+        dynamics_covariance=lambda _t: Q_learned,
+        emission_weights=lambda _t: H,
+        emission_covariance=lambda _t: R,
+    )
+
+    result = model.infer(forecast_emissions, method=Kalman())
+
+    assert result.filtered_means.shape == (100 + horizon, STATE_DIM)
+    assert jnp.all(jnp.isfinite(result.filtered_means))
+    forecast_covs = result.filtered_covariances[100:]
+    for i in range(1, horizon):
+        assert jnp.linalg.det(forecast_covs[i]) >= jnp.linalg.det(
+            forecast_covs[i - 1],
+        )
+
+
 # --- Differentiable particle filter ---
 
 

@@ -77,6 +77,15 @@ The model returns a posterior. Parameter estimation is your problem:
 - **numpyro**: `numpyro.factor("ll", posterior.marginal_log_likelihood)`
 - **EM**: smoother E-step + numerical M-step
 
+### Missing observations and forecasting
+
+NaN values in `emissions` are treated as missing: the filter skips the observation update and only propagates the dynamics. To forecast, append NaN rows for future timesteps after fitting:
+
+```python
+forecast_emissions = jnp.concatenate([emissions, jnp.full((horizon, obs_dim), jnp.nan)])
+posterior = model.infer(forecast_emissions, method=Kalman())
+```
+
 ### Trainable parameters
 
 ```python
@@ -106,8 +115,6 @@ uv sync --dev
 
 - **Exogenous inputs / bias terms.** cuthbert's Kalman filter supports bias vectors `c` and `d` in the dynamics and observation equations (`x_t = F @ x_{t-1} + c(t) + noise`). We hardcode them to zero. Adding `dynamics_bias` and `emission_bias` callable fields to `LinearGaussianSSM` would expose this without breaking linearity. For `NonlinearGaussianSSM`, exogenous inputs can already be absorbed into `dynamics_fn`.
 - **Continuous-time models.** Drift/diffusion SDE with discretise-then-filter via cd-dynamax or cuthbert.
-- **Missing observations.**
-- **Forecasting.**
 
 ## dev
 

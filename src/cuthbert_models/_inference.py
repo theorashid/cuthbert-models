@@ -115,7 +115,12 @@ def _kalman_callbacks(
         t_idx = jnp.array(mi - 1, dtype=jnp.int32)
         H_t = model.emission_weights(t)
         R_t = model.emission_covariance(t)
-        return H_t, d, jnp.linalg.cholesky(R_t), emissions[t_idx]
+        y = emissions[t_idx]
+        # NaN → zero H so Kalman gain is zero and the filter only predicts
+        missing = jnp.any(jnp.isnan(y))
+        H_t = jnp.where(missing, jnp.zeros_like(H_t), H_t)
+        y = jnp.where(missing, jnp.zeros_like(y), y)
+        return H_t, d, jnp.linalg.cholesky(R_t), y
 
     return get_init_params, get_dynamics_params, get_observation_params
 
@@ -189,6 +194,7 @@ def _ekf_callbacks(
     def get_observation_func(state, mi):
         t = jnp.array(mi - 1, dtype=dtype)
         t_idx = jnp.array(mi - 1, dtype=jnp.int32)
+        # NaN y passed through; cuthbert's ignore_nan_dims handles missing dims
         y = emissions[t_idx]
         x_lin = state.mean
 
@@ -212,6 +218,7 @@ def infer_ekf(
     get_init, get_dyn, get_obs = _ekf_callbacks(model, emissions)
     filter_obj = taylor_filter.build_filter(
         get_init, get_dyn, get_obs, associative=False,
+        ignore_nan_dims=True,
     )
     model_inputs = jnp.arange(emissions.shape[0] + 1)
     states = cuthbert_filter(filter_obj, model_inputs, parallel=False)
@@ -225,6 +232,7 @@ def smooth_ekf(
     get_init, get_dyn, get_obs = _ekf_callbacks(model, emissions)
     filter_obj = taylor_filter.build_filter(
         get_init, get_dyn, get_obs, associative=False,
+        ignore_nan_dims=True,
     )
     smoother_obj = taylor_smoother_mod.build_smoother(get_dyn)
     model_inputs = jnp.arange(emissions.shape[0] + 1)
@@ -265,14 +273,23 @@ def _ekf_moments_callbacks(
     def get_observation_moments(state, mi):
         t = jnp.array(mi - 1, dtype=dtype)
         t_idx = jnp.array(mi - 1, dtype=jnp.int32)
+        y = emissions[t_idx]
+        # NaN → inflate observation covariance to ~∞ so the update is a no-op
+        missing = jnp.any(jnp.isnan(y))
+        y_safe = jnp.where(jnp.isnan(y), 0.0, y)
 
         def mean_and_chol_cov(x):
             R_t = model.emission_covariance(x, t)
-            return model.emission_fn(x, t), jnp.linalg.cholesky(R_t)
+            mean = model.emission_fn(x, t)
+            chol_R = jnp.linalg.cholesky(R_t)
+            large_chol = jnp.eye(R_t.shape[0], dtype=dtype) * 1e8
+            return (
+                jnp.where(missing, jnp.zeros_like(mean), mean),
+                jnp.where(missing, large_chol, chol_R),
+            )
 
         x_lin = state.mean
-        y = emissions[t_idx]
-        return mean_and_chol_cov, x_lin, y
+        return mean_and_chol_cov, x_lin, y_safe
 
     return get_init_params, get_dynamics_moments, get_observation_moments
 
@@ -328,7 +345,12 @@ def _forward_callbacks(
     def get_obs_log_likelihoods(mi):
         t = jnp.array(mi - 1, dtype=dtype)
         t_idx = jnp.array(mi - 1, dtype=jnp.int32)
-        return model.emission_log_likelihood(emissions[t_idx], t)
+        y = emissions[t_idx]
+        # NaN → zero log-likelihoods (uniform across states) so no update
+        missing = jnp.any(jnp.isnan(y))
+        y_safe = jnp.where(jnp.isnan(y), 0.0, y)
+        log_liks = model.emission_log_likelihood(y_safe, t)
+        return jnp.where(missing, jnp.zeros_like(log_liks), log_liks)
 
     return get_init_dist, get_transition_matrix, get_obs_log_likelihoods
 
@@ -402,14 +424,18 @@ def infer_particle_gaussian(
         t = jnp.array(mi - 1, dtype=dtype)
         t_idx = jnp.array(mi - 1, dtype=jnp.int32)
         y = emissions[t_idx]
+        # NaN → zero log-potential so particles are not reweighted
+        missing = jnp.any(jnp.isnan(y))
+        y_safe = jnp.where(jnp.isnan(y), 0.0, y)
         predicted = model.emission_fn(state, t)
         R_t = model.emission_covariance(state, t)
         obs_dim = R_t.shape[0]
-        diff = y - predicted
+        diff = y_safe - predicted
         chol_R = jnp.linalg.cholesky(R_t)
         log_det = 2.0 * jnp.sum(jnp.log(jnp.diag(chol_R)))
         solve = jnp.linalg.solve(R_t, diff)
-        return -0.5 * (obs_dim * jnp.log(2.0 * jnp.pi) + log_det + diff @ solve)
+        ll = -0.5 * (obs_dim * jnp.log(2.0 * jnp.pi) + log_det + diff @ solve)
+        return jnp.where(missing, 0.0, ll)
 
     filter_obj = pf.build_filter(
         init_sample,
@@ -461,8 +487,12 @@ def infer_particle_hmm(
     def log_potential(_state_prev, state, mi):
         t = jnp.array(mi - 1, dtype=dtype)
         t_idx = jnp.array(mi - 1, dtype=jnp.int32)
-        log_liks = model.emission_log_likelihood(emissions[t_idx], t)
-        return log_liks[state]
+        y = emissions[t_idx]
+        # NaN → zero log-potential so particles are not reweighted
+        missing = jnp.any(jnp.isnan(y))
+        y_safe = jnp.where(jnp.isnan(y), 0.0, y)
+        log_liks = model.emission_log_likelihood(y_safe, t)
+        return jnp.where(missing, 0.0, log_liks[state])
 
     filter_obj = pf.build_filter(
         init_sample,
