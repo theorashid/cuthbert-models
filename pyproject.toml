@@ -94,3 +94,5 @@ extra-paths = ["src", "tests"]
 # cuthbert's Protocol types use ArrayTreeLike which ty can't resolve
 # for inner closures, producing false-positive invalid-argument-type errors
 invalid-argument-type = "ignore"
+# numpyro.sample returns a union type that ty can't resolve unary `-` on
+unsupported-operator = "ignore"

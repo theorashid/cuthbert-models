@@ -40,12 +40,16 @@ __all__ = [
     "infer_ekf_moments",
     "infer_forward",
     "infer_kalman",
+    "infer_linear_continuous",
+    "infer_nonlinear_continuous",
     "infer_particle_gaussian",
     "infer_particle_hmm",
     "smooth_ekf",
     "smooth_ekf_moments",
     "smooth_forward",
     "smooth_kalman",
+    "smooth_linear_continuous",
+    "smooth_nonlinear_continuous",
 ]
 
 # ---------------------------------------------------------------------------
@@ -514,3 +518,196 @@ def infer_particle_hmm(
         marginal_log_likelihood=states.log_normalizing_constant[-1],
         filtered_probs=filtered_probs,
     )
+
+
+# ---------------------------------------------------------------------------
+# Linear continuous-discrete: exact discretisation via Van Loan (1978)
+#
+# The continuous-time linear SDE
+#   dz = A z dt + L dW
+# is exactly discretised to z_{k+1} ~ N(F z_k, Q) where
+#   F = expm(A dt)
+#   Q = F^{-T} @ C  (read from the block matrix exponential)
+#
+# Van Loan trick: expm([[-A, L L^T], [0, A^T]] * dt) gives
+#   [[*, F^{-T} Q], [0, F^T]]
+# so F = bottom-right block transposed, Q = F^T @ top-right block.
+#
+# Reference: Van Loan, "Computing integrals involving the matrix
+# exponential", IEEE Trans. Automatic Control, 1978.
+#
+# dynestyx does NOT use Van Loan. It delegates to cd-dynamax which
+# numerically integrates moment ODEs (dA/dt, dQ/dt, dC/dt) via diffrax.
+# Both are mathematically equivalent for LTI systems but the ODE solver
+# introduces numerical integration error. We use Van Loan for exact
+# (up to floating-point) discretisation with no diffrax dependency.
+# ---------------------------------------------------------------------------
+
+
+def _van_loan_discretise(
+    A: Float[Array, "s s"],
+    L: Float[Array, "s b"],
+    dt: Float[Array, ""],
+) -> tuple[Float[Array, "s s"], Float[Array, "s s"]]:
+    """Exact discretisation of dz = A z dt + L dW via the Van Loan method."""
+    s = A.shape[0]
+    LLT = L @ L.T
+    top = jnp.concatenate([jnp.negative(A), LLT], axis=1)
+    bottom = jnp.concatenate([jnp.zeros((s, s), dtype=A.dtype), A.T], axis=1)
+    block = jnp.concatenate([top, bottom], axis=0) * dt
+    block_exp = jax.scipy.linalg.expm(block)
+    F_T = block_exp[s:, s:]
+    F = F_T.T
+    Q = F_T @ block_exp[:s, s:]
+    return F, Q
+
+
+def _linear_continuous_callbacks(
+    model,  # LinearContinuousSSM (untyped to avoid circular import)
+    obs_times: Float[Array, " time"],
+    emissions: Float[Array, "time obs"],
+):
+    """Build Kalman callbacks for a linear continuous-discrete SSM."""
+    dtype = model.initial_mean.dtype
+    state_dim = model.initial_mean.shape[0]
+    obs_dim = emissions.shape[-1]
+
+    chol_P0 = jnp.linalg.cholesky(model.initial_covariance)
+    c = jnp.zeros(state_dim, dtype=dtype)
+    d = jnp.zeros(obs_dim, dtype=dtype)
+
+    def get_init_params(_mi):
+        return model.initial_mean, chol_P0
+
+    def get_dynamics_params(mi):
+        t_idx = jnp.array(mi - 1, dtype=jnp.int32)
+        t_now = obs_times[t_idx]
+        # dt to next observation; for the last step, use the previous dt
+        t_next = jnp.where(
+            t_idx < obs_times.shape[0] - 1,
+            obs_times[t_idx + 1],
+            obs_times[t_idx] + (obs_times[-1] - obs_times[-2]),
+        )
+        dt = t_next - t_now
+        A_t = model.drift_matrix(t_now)
+        L_t = model.diffusion_coefficient(t_now)
+        F_t, Q_t = _van_loan_discretise(A_t, L_t, dt)
+        return F_t, c, jnp.linalg.cholesky(Q_t)
+
+    def get_observation_params(mi):
+        t_idx = jnp.array(mi - 1, dtype=jnp.int32)
+        t = obs_times[t_idx]
+        H_t = model.emission_weights(t)
+        R_t = model.emission_covariance(t)
+        y = emissions[t_idx]
+        missing = jnp.any(jnp.isnan(y))
+        H_t = jnp.where(missing, jnp.zeros_like(H_t), H_t)
+        y = jnp.where(missing, jnp.zeros_like(y), y)
+        return H_t, d, jnp.linalg.cholesky(R_t), y
+
+    return get_init_params, get_dynamics_params, get_observation_params
+
+
+def infer_linear_continuous(
+    model,
+    obs_times: Float[Array, " time"],
+    emissions: Float[Array, "time obs"],
+    *,
+    parallel: bool = False,
+) -> GaussianPosterior:
+    get_init, get_dyn, get_obs = _linear_continuous_callbacks(
+        model, obs_times, emissions,
+    )
+    filter_obj = kalman.build_filter(get_init, get_dyn, get_obs)
+    model_inputs = jnp.arange(emissions.shape[0] + 1)
+    states = cuthbert_filter(filter_obj, model_inputs, parallel=parallel)
+    return _gaussian_posterior(states)
+
+
+def smooth_linear_continuous(
+    model,
+    obs_times: Float[Array, " time"],
+    emissions: Float[Array, "time obs"],
+    *,
+    parallel: bool = False,
+) -> GaussianSmoothedPosterior:
+    get_init, get_dyn, get_obs = _linear_continuous_callbacks(
+        model, obs_times, emissions,
+    )
+    filter_obj = kalman.build_filter(get_init, get_dyn, get_obs)
+    smoother_obj = kalman.build_smoother(get_dyn)
+    model_inputs = jnp.arange(emissions.shape[0] + 1)
+    filter_states = cuthbert_filter(filter_obj, model_inputs, parallel=parallel)
+    smoother_states = cuthbert_smoother(
+        smoother_obj, filter_states, parallel=parallel,
+    )
+    return _gaussian_smoothed_posterior(filter_states, smoother_states)
+
+
+# ---------------------------------------------------------------------------
+# Nonlinear continuous-discrete: Euler-Maruyama discretisation
+#
+# Maths follows dynestyx/discretizers.py:62-67
+# (_EulerMaruyamaDiscreteEvolution.__call__._step):
+#   mean = x + drift(x, t) * dt
+#   cov  = L @ L^T * dt
+#
+# We build a NonlinearGaussianSSM whose dynamics_fn and
+# dynamics_covariance encode the Euler-Maruyama step, then delegate
+# to the existing EKF / particle filter infrastructure.
+# ---------------------------------------------------------------------------
+
+
+def _euler_maruyama_to_discrete(
+    model,  # NonlinearContinuousSSM
+    obs_times: Float[Array, " time"],
+):
+    """Convert nonlinear continuous-discrete model to NonlinearGaussianSSM."""
+    T = obs_times.shape[0]
+    dt_arr = jnp.concatenate([
+        obs_times[1:] - obs_times[:-1],
+        jnp.array([obs_times[-1] - obs_times[-2]]),
+    ])
+
+    def dynamics_fn(x, t):
+        t_idx = jnp.array(t, dtype=jnp.int32)
+        t_now = obs_times[jnp.clip(t_idx, 0, T - 1)]
+        dt = dt_arr[jnp.clip(t_idx, 0, T - 1)]
+        return x + model.drift(x, t_now) * dt
+
+    def dynamics_covariance(t):
+        t_idx = jnp.array(t, dtype=jnp.int32)
+        t_now = obs_times[jnp.clip(t_idx, 0, T - 1)]
+        dt = dt_arr[jnp.clip(t_idx, 0, T - 1)]
+        x_dummy = jnp.zeros(model.initial_mean.shape[0], dtype=t_now.dtype)
+        L = model.diffusion_coefficient(x_dummy, t_now)
+        return L @ L.T * dt
+
+    return NonlinearGaussianSSM(
+        initial_mean=model.initial_mean,
+        initial_covariance=model.initial_covariance,
+        dynamics_fn=dynamics_fn,
+        dynamics_covariance=dynamics_covariance,
+        emission_fn=model.emission_fn,
+        emission_covariance=model.emission_covariance,
+    )
+
+
+def infer_nonlinear_continuous(
+    model,
+    obs_times: Float[Array, " time"],
+    emissions: Float[Array, "time obs"],
+    method,
+) -> GaussianPosterior:
+    discrete = _euler_maruyama_to_discrete(model, obs_times)
+    return discrete.infer(emissions, method=method)
+
+
+def smooth_nonlinear_continuous(
+    model,
+    obs_times: Float[Array, " time"],
+    emissions: Float[Array, "time obs"],
+    method,
+) -> GaussianSmoothedPosterior:
+    discrete = _euler_maruyama_to_discrete(model, obs_times)
+    return discrete.smooth(emissions, method=method)

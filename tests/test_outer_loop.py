@@ -15,12 +15,16 @@ from numpyro.infer.initialization import init_to_value
 
 from cuthbert_models import (
     EKF,
+    EulerMaruyama,
     Kalman,
+    LinearContinuousSSM,
     LinearGaussianSSM,
+    NonlinearContinuousSSM,
     NonlinearGaussianSSM,
     Particle,
     TrainableCovariance,
     TrainableWeights,
+    VanLoan,
 )
 
 STATE_DIM, OBS_DIM = 2, 1
@@ -118,6 +122,126 @@ def test_ekf_gradients_are_finite(method):
     assert jnp.all(jnp.isfinite(grad_F))
     assert grad_F.shape == F_TRUE.shape
 
+
+# --- Continuous-time numpyro SVI ---
+
+# Continuous-time OU process: dx = -lambda x dt + sigma dW
+# In dynestyx this would be:
+#   with Filter(filter_config=KFConfig()):
+#       dsx.sample("f", model, obs_times=t, obs_values=y)
+# Here it's just:
+#   posterior = model.infer(obs_times, emissions, method=Kalman())
+#   numpyro.factor("ll", posterior.marginal_log_likelihood)
+
+DT_CT = 0.1
+N_TIME_CT = 100
+LAM_TRUE = 0.5
+SIGMA_TRUE = 0.3
+A_TRUE = jnp.array([[-LAM_TRUE]])
+L_TRUE = jnp.array([[SIGMA_TRUE]])
+H_CT = jnp.eye(1)
+R_CT = jnp.eye(1) * 0.1
+M0_CT = jnp.zeros(1)
+P0_CT = jnp.eye(1)
+
+
+def _ct_emissions(key):
+    F_disc = jax.scipy.linalg.expm(A_TRUE * DT_CT)
+    Q_disc = (
+        SIGMA_TRUE**2 / (2 * LAM_TRUE)
+        * (1 - jnp.exp(-2 * LAM_TRUE * DT_CT))
+        * jnp.eye(1)
+    )
+    _, e = simulate_lgssm(M0_CT, F_disc, Q_disc, H_CT, R_CT, N_TIME_CT, key)
+    return e
+
+
+def _numpyro_model_linear_continuous(obs_times, y, m0, P0, H, R):
+    lam = numpyro.sample("lam", dist.LogNormal(0.0, 0.5))
+    sigma = numpyro.sample("sigma", dist.LogNormal(0.0, 0.5))
+
+    A = jnp.array([[-lam]])
+    L = jnp.array([[sigma]])
+
+    model = LinearContinuousSSM(
+        initial_mean=m0,
+        initial_covariance=P0,
+        drift_matrix=lambda _t: A,
+        diffusion_coefficient=lambda _t: L,
+        emission_weights=lambda _t: H,
+        emission_covariance=lambda _t: R,
+    )
+    posterior = model.infer(obs_times, y, method=Kalman(), discretization=VanLoan())
+    numpyro.factor("log_likelihood", posterior.marginal_log_likelihood)
+
+
+def test_numpyro_svi_linear_continuous():
+    emissions = _ct_emissions(jr.key(0))
+    obs_times = jnp.arange(N_TIME_CT, dtype=jnp.float32) * DT_CT
+
+    init_values = {"lam": LAM_TRUE * 1.5, "sigma": SIGMA_TRUE * 0.8}
+    guide = AutoDelta(
+        _numpyro_model_linear_continuous,
+        init_loc_fn=init_to_value(values=init_values),
+    )
+    optimiser = optax.adam(5e-3)
+    svi = SVI(
+        _numpyro_model_linear_continuous,
+        guide, optimiser, loss=Trace_ELBO(),
+    )
+    args = (obs_times, emissions, M0_CT, P0_CT, H_CT, R_CT)
+    svi_result = svi.run(jr.key(42), 200, *args)
+
+    assert svi_result.losses[-1] < svi_result.losses[0]
+    params = guide.median(svi_result.params)
+    assert jnp.isfinite(params["lam"])
+    assert jnp.isfinite(params["sigma"])
+    assert params["lam"] > 0
+
+
+def _numpyro_model_nonlinear_continuous(obs_times, y, m0, P0, H, R):
+    lam = numpyro.sample("lam", dist.LogNormal(0.0, 0.5))
+    sigma = numpyro.sample("sigma", dist.LogNormal(0.0, 0.5))
+
+    L = jnp.array([[sigma]])
+
+    model = NonlinearContinuousSSM(
+        initial_mean=m0,
+        initial_covariance=P0,
+        drift=lambda x, _t: -lam * x,
+        diffusion_coefficient=lambda _x, _t: L,
+        emission_fn=lambda x, _t: H @ x,
+        emission_covariance=lambda _x, _t: R,
+    )
+    posterior = model.infer(
+        obs_times, y, method=EKF(linearization="taylor"),
+        discretization=EulerMaruyama(),
+    )
+    numpyro.factor("log_likelihood", posterior.marginal_log_likelihood)
+
+
+def test_numpyro_svi_nonlinear_continuous():
+    emissions = _ct_emissions(jr.key(0))
+    obs_times = jnp.arange(N_TIME_CT, dtype=jnp.float32) * DT_CT
+
+    init_values = {"lam": LAM_TRUE * 1.5, "sigma": SIGMA_TRUE * 0.8}
+    guide = AutoDelta(
+        _numpyro_model_nonlinear_continuous,
+        init_loc_fn=init_to_value(values=init_values),
+    )
+    optimiser = optax.adam(5e-3)
+    svi = SVI(
+        _numpyro_model_nonlinear_continuous,
+        guide, optimiser, loss=Trace_ELBO(),
+    )
+    args = (obs_times, emissions, M0_CT, P0_CT, H_CT, R_CT)
+    svi_result = svi.run(jr.key(42), 200, *args)
+
+    assert svi_result.losses[-1] < svi_result.losses[0]
+    params = guide.median(svi_result.params)
+    assert jnp.isfinite(params["lam"])
+    assert jnp.isfinite(params["sigma"])
+    assert params["lam"] > 0
 
 # --- Numpyro SVI (Kalman and EKF moments) ---
 
