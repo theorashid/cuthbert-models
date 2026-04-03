@@ -92,7 +92,7 @@ from dynestyx import (  # noqa: E402, RUF100
 from dynestyx.models.state_evolution import AffineDrift  # noqa: E402, RUF100
 from dynestyx.inference.filters import (  # noqa: E402, RUF100
     ContinuousTimeKFConfig,
-    Filter,
+    Filter as DsxFilter,
 )
 
 
@@ -109,7 +109,7 @@ def dynestyx_numpyro_model(obs_times, obs_values):
         observation_model=LinearGaussianObservation(H=H, R=R),
     )
 
-    with Filter(filter_config=ContinuousTimeKFConfig()):
+    with DsxFilter(filter_config=ContinuousTimeKFConfig()):
         dsx.sample(
             "f", dynamics,
             obs_times=obs_times, obs_values=obs_values,
@@ -119,7 +119,14 @@ def dynestyx_numpyro_model(obs_times, obs_values):
 # -----------------------------------------------------------------------
 # cuthbert-models: numpyro model
 # -----------------------------------------------------------------------
-from cuthbert_models import Kalman, LinearContinuousSSM, VanLoan  # noqa: E402, RUF100
+from cuthbert_models import (  # noqa: E402, RUF100
+    Discretizer,
+    Filter,
+    Kalman,
+    LinearContinuousSSM,
+    VanLoan,
+    infer,
+)
 
 
 def cuthbert_numpyro_model(obs_times, obs_values):
@@ -135,9 +142,8 @@ def cuthbert_numpyro_model(obs_times, obs_values):
         emission_covariance=lambda _t: R,
     )
 
-    posterior = model.infer(
-        obs_times, obs_values, method=Kalman(), discretization=VanLoan(),
-    )
+    with Filter(Kalman()), Discretizer(VanLoan()):
+        posterior = infer(model, obs_values, obs_times=obs_times)
     numpyro.factor("log_likelihood", posterior.marginal_log_likelihood)
 
 

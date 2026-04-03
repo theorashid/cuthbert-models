@@ -15,7 +15,9 @@ from numpyro.infer.initialization import init_to_value
 
 from cuthbert_models import (
     EKF,
+    Discretizer,
     EulerMaruyama,
+    Filter,
     Kalman,
     LinearContinuousSSM,
     LinearGaussianSSM,
@@ -25,6 +27,7 @@ from cuthbert_models import (
     TrainableCovariance,
     TrainableWeights,
     VanLoan,
+    infer,
 )
 
 STATE_DIM, OBS_DIM = 2, 1
@@ -70,7 +73,8 @@ def test_optax_mle_kalman():
     @eqx.filter_jit
     def loss_fn(trainable):
         m = eqx.combine(trainable, static)
-        return -m.infer(emissions, method=Kalman()).marginal_log_likelihood
+        with Filter(Kalman()):
+            return -infer(m, emissions).marginal_log_likelihood
 
     optimiser = optax.adam(1e-2)
     opt_state = optimiser.init(eqx.filter(trainable, eqx.is_array))
@@ -116,7 +120,8 @@ def test_ekf_gradients_are_finite(method):
             emission_fn=lambda x, _t: H @ x,
             emission_covariance=lambda _x, _t: R,
         )
-        return -model.infer(emissions, method=method).marginal_log_likelihood
+        with Filter(method):
+            return -infer(model, emissions).marginal_log_likelihood
 
     grad_F = jax.grad(loss)(F_TRUE)
     assert jnp.all(jnp.isfinite(grad_F))
@@ -124,14 +129,6 @@ def test_ekf_gradients_are_finite(method):
 
 
 # --- Continuous-time numpyro SVI ---
-
-# Continuous-time OU process: dx = -lambda x dt + sigma dW
-# In dynestyx this would be:
-#   with Filter(filter_config=KFConfig()):
-#       dsx.sample("f", model, obs_times=t, obs_values=y)
-# Here it's just:
-#   posterior = model.infer(obs_times, emissions, method=Kalman())
-#   numpyro.factor("ll", posterior.marginal_log_likelihood)
 
 DT_CT = 0.1
 N_TIME_CT = 100
@@ -171,7 +168,8 @@ def _numpyro_model_linear_continuous(obs_times, y, m0, P0, H, R):
         emission_weights=lambda _t: H,
         emission_covariance=lambda _t: R,
     )
-    posterior = model.infer(obs_times, y, method=Kalman(), discretization=VanLoan())
+    with Filter(Kalman()), Discretizer(VanLoan()):
+        posterior = infer(model, y, obs_times=obs_times)
     numpyro.factor("log_likelihood", posterior.marginal_log_likelihood)
 
 
@@ -213,10 +211,8 @@ def _numpyro_model_nonlinear_continuous(obs_times, y, m0, P0, H, R):
         emission_fn=lambda x, _t: H @ x,
         emission_covariance=lambda _x, _t: R,
     )
-    posterior = model.infer(
-        obs_times, y, method=EKF(linearization="taylor"),
-        discretization=EulerMaruyama(),
-    )
+    with Filter(EKF(linearization="taylor")), Discretizer(EulerMaruyama()):
+        posterior = infer(model, y, obs_times=obs_times)
     numpyro.factor("log_likelihood", posterior.marginal_log_likelihood)
 
 
@@ -267,7 +263,8 @@ def _numpyro_model_kalman(y, m0, P0, H, R):
         emission_weights=lambda _t: H,
         emission_covariance=lambda _t: R,
     )
-    posterior = model.infer(y, method=Kalman())
+    with Filter(Kalman()):
+        posterior = infer(model, y)
     numpyro.factor("log_likelihood", posterior.marginal_log_likelihood)
 
 
@@ -292,7 +289,8 @@ def _numpyro_model_nonlinear(y, method, m0, P0, H, R):
         emission_fn=lambda x, _t: H @ x,
         emission_covariance=lambda _x, _t: R,
     )
-    posterior = model.infer(y, method=method)
+    with Filter(method):
+        posterior = infer(model, y)
     numpyro.factor("log_likelihood", posterior.marginal_log_likelihood)
 
 
@@ -375,7 +373,8 @@ def test_forecast_after_svi():
         emission_covariance=lambda _t: R,
     )
 
-    result = model.infer(forecast_emissions, method=Kalman())
+    with Filter(Kalman()):
+        result = infer(model, forecast_emissions)
 
     assert result.filtered_means.shape == (100 + horizon, STATE_DIM)
     assert jnp.all(jnp.isfinite(result.filtered_means))
@@ -408,14 +407,12 @@ def test_differentiable_particle_filter():
             emission_fn=lambda x, _t: H @ x,
             emission_covariance=lambda _x, _t: R,
         )
-        return -model.infer(
-            emissions,
-            method=Particle(
-                key=jr.key(42),
-                n_particles=200,
-                resampling_fn=diff_resampling,
-            ),
-        ).marginal_log_likelihood
+        method = Particle(
+            key=jr.key(42), n_particles=200,
+            resampling_fn=diff_resampling,
+        )
+        with Filter(method):
+            return -infer(model, emissions).marginal_log_likelihood
 
     grad_F = jax.grad(loss)(F_TRUE)
     assert jnp.all(jnp.isfinite(grad_F))

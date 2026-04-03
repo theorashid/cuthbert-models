@@ -4,7 +4,7 @@ import jax.random as jr
 import pytest
 from cuthbertlib.resampling.systematic import resampling as systematic_resampling
 
-from cuthbert_models import HMM, Forward, Kalman, Particle
+from cuthbert_models import HMM, Filter, Forward, Kalman, Particle, infer, smooth
 
 
 def _random_hmm_args(key, n_states: int = 3, n_time: int = 50):
@@ -47,14 +47,16 @@ FORWARD_IDS = ["forward", "forward_parallel"]
 @pytest.mark.parametrize("method", FORWARD_METHODS, ids=FORWARD_IDS)
 def test_log_likelihood_is_finite(method):
     model, emissions = _random_hmm_args(jr.key(20))
-    ll = model.infer(emissions, method=method).marginal_log_likelihood
+    with Filter(method):
+        ll = infer(model, emissions).marginal_log_likelihood
     assert jnp.isfinite(ll)
 
 
 @pytest.mark.parametrize("method", FORWARD_METHODS, ids=FORWARD_IDS)
 def test_filtered_probs_are_valid(method):
     model, emissions = _random_hmm_args(jr.key(21))
-    posterior = model.infer(emissions, method=method)
+    with Filter(method):
+        posterior = infer(model, emissions)
     probs = posterior.filtered_probs
     assert jnp.all(probs >= 0)
     assert jnp.allclose(probs.sum(axis=-1), 1.0, atol=1e-5)
@@ -62,8 +64,10 @@ def test_filtered_probs_are_valid(method):
 
 def test_parallel_matches_sequential():
     model, emissions = _random_hmm_args(jr.key(22))
-    seq = model.infer(emissions, method=Forward())
-    par = model.infer(emissions, method=Forward(parallel=True))
+    with Filter(Forward()):
+        seq = infer(model, emissions)
+    with Filter(Forward(parallel=True)):
+        par = infer(model, emissions)
     assert jnp.allclose(seq.filtered_probs, par.filtered_probs, atol=1e-4)
     assert jnp.allclose(
         seq.marginal_log_likelihood, par.marginal_log_likelihood, atol=1e-2,
@@ -72,8 +76,8 @@ def test_parallel_matches_sequential():
 
 def test_invalid_method():
     model, emissions = _random_hmm_args(jr.key(23))
-    with pytest.raises(Exception):  # noqa: B017, PT011
-        model.infer(emissions, method=Kalman())
+    with pytest.raises(Exception), Filter(Kalman()):  # noqa: B017, PT011
+        infer(model, emissions)
 
 
 def test_particle_filter_hmm():
@@ -83,9 +87,11 @@ def test_particle_filter_hmm():
         resampling_fn=systematic_resampling,
         n_particles=500,
     )
-    result = model.infer(emissions, method=method)
+    with Filter(method):
+        result = infer(model, emissions)
     assert jnp.isfinite(result.marginal_log_likelihood)
-    forward_ll = model.infer(emissions, method=Forward()).marginal_log_likelihood
+    with Filter(Forward()):
+        forward_ll = infer(model, emissions).marginal_log_likelihood
     assert jnp.allclose(forward_ll, result.marginal_log_likelihood, atol=5.0)
 
 
@@ -108,13 +114,15 @@ def test_deterministic_hmm():
         emission_log_likelihood=emission_log_likelihood,
     )
     emissions = jnp.array([[5.0], [0.0], [5.0], [0.0]])
-    posterior = model.infer(emissions, method=Forward())
+    with Filter(Forward()):
+        posterior = infer(model, emissions)
     assert posterior.filtered_probs[0, 1] > 0.99
 
 
 def test_smoother_probs_are_valid():
     model, emissions = _random_hmm_args(jr.key(25))
-    result = model.smooth(emissions, method=Forward())
+    with Filter(Forward()):
+        result = smooth(model, emissions)
     assert jnp.all(result.smoothed_probs >= 0)
     assert jnp.allclose(result.smoothed_probs.sum(axis=-1), 1.0, atol=1e-5)
     assert jnp.isfinite(result.marginal_log_likelihood)

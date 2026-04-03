@@ -15,7 +15,7 @@ y_k = H(t_k) x(t_k) + N(0, R(t_k))
 
 The model stores callables `drift_matrix`, `diffusion_coefficient`, `emission_weights`, `emission_covariance`, paralleling the discrete `LinearGaussianSSM` fields (`dynamics_weights`, `dynamics_covariance`, etc.).
 
-`.infer(obs_times, emissions, method=Kalman(), discretization=VanLoan())` **exactly discretises** each observation interval via the Van Loan (1978) matrix exponential trick, producing time-varying `F(dt)` and `Q(dt)`, then delegates to the existing Kalman filter. No approximation error. Uses `jax.scipy.linalg.expm` -- no new dependencies.
+With `Filter(Kalman())` and `Discretizer(VanLoan())`, **exactly discretises** each observation interval via the Van Loan (1978) matrix exponential trick, producing time-varying `F(dt)` and `Q(dt)`, then delegates to the existing Kalman filter. No approximation error. Uses `jax.scipy.linalg.expm` -- no new dependencies.
 
 ### `NonlinearContinuousSSM`
 
@@ -24,7 +24,7 @@ dx = mu(x, t) dt + L(x, t) dW
 y_k = h(x(t_k), t_k) + N(0, R(x(t_k), t_k))
 ```
 
-`.infer(obs_times, emissions, method=EKF(...), discretization=EulerMaruyama())` **Euler-Maruyama discretises** each interval:
+With `Filter(EKF(...))` and `Discretizer(EulerMaruyama())`, **Euler-Maruyama discretises** each interval:
 
 - `dynamics_fn(x, t) = x + mu(x, t) * dt`
 - `dynamics_covariance(t) = L @ L^T * dt`
@@ -33,30 +33,33 @@ then delegates to the existing `NonlinearGaussianSSM` EKF/particle filter. First
 
 ### Discretization strategies (`_discretize.py`)
 
-Continuous-time models require an explicit `discretization` argument (no default), following the same pattern as `method`:
+Continuous-time models require a `Discretizer` handler, following the same composable pattern as `Filter`:
 
 ```python
-model.infer(obs_times, emissions, method=Kalman(), discretization=VanLoan())
-model.infer(obs_times, emissions, method=EKF(linearization="taylor"), discretization=EulerMaruyama())
+with Filter(Kalman()), Discretizer(VanLoan()):
+    posterior = infer(model, emissions, obs_times=t)
+
+with Filter(EKF(linearization="taylor")), Discretizer(EulerMaruyama()):
+    posterior = infer(model, emissions, obs_times=t)
 ```
 
 - `VanLoan`: exact matrix exponential discretisation (linear models only).
 - `EulerMaruyama`: first-order SDE approximation (any model).
 - `AdaptiveODE` (commented out): placeholder for a future diffrax-based ODE solver, matching what cd-dynamax does internally.
 
-Validation is inline in each model class, matching how `method` dispatch works (no separate resolve function):
+Validation is in the `Discretizer` and `Filter` handlers (`_handlers.py`):
 
-- `NonlinearContinuousSSM` raises `TypeError` if given `VanLoan`.
-- `LinearContinuousSSM` accepts both; `EulerMaruyama` delegates through `NonlinearContinuousSSM`.
-- `LinearContinuousSSM.smooth()` only supports `VanLoan`.
-- `Particle` method on `LinearContinuousSSM` always uses Euler-Maruyama internally (same pattern as `LinearGaussianSSM` silently delegating to `NonlinearGaussianSSM` for particle filtering).
+- `Discretizer(VanLoan())` raises `TypeError` if the model is `NonlinearContinuousSSM`.
+- `Discretizer(EulerMaruyama())` converts any continuous model to a discrete `NonlinearGaussianSSM` via `_euler_maruyama_to_discrete`, then `fwd()`s to `Filter`.
+- `LinearContinuousSSM` with `Kalman` + `VanLoan` uses exact Van Loan discretisation directly in `Filter` (no `Discretizer` needed, though using one is harmless).
+- `LinearContinuousSSM` with `EulerMaruyama` is converted to `NonlinearContinuousSSM` internally (wrapping `diffusion_coefficient(t)` to `(x, t)` signature).
 
 ### Design choices
 
-- Continuous-time models take `obs_times` as an explicit argument to `.infer()` and `.smooth()`. Discrete models don't need it (time is an integer index).
-- Discretisation happens inside the bridge layer (`_inference.py`), invisible to the user. The model stores the continuous-time parameterisation.
-- Both models can fall back to particle filtering via the existing `Particle` method.
-- `LinearContinuousSSM` with `EulerMaruyama` or `Particle` delegates to `NonlinearContinuousSSM`. The linear `diffusion_coefficient(t)` is wrapped to `(x, t)` and `Kalman()` is converted to `EKF(linearization="moments")` since the discrete nonlinear model doesn't accept Kalman.
+- Continuous-time models pass `obs_times` as a keyword argument to `infer()` and `smooth()`. Discrete models don't need it (time is an integer index).
+- Model classes are pure data (equinox Modules, no methods). All dispatch lives in `_handlers.py`.
+- Discretisation happens in the `Discretizer` handler or inside `_inference.py` (for Van Loan), invisible to the user. The model stores the continuous-time parameterisation.
+- Both models can fall back to particle filtering via `Filter(Particle(...))` + `Discretizer(EulerMaruyama())`.
 
 ### Known limitations
 
@@ -178,14 +181,26 @@ The effect system lets dynestyx compose operations (discretise, filter, simulate
 
 The cost: the user must understand handler stacking, the `with` syntax is mandatory, and the model can't do anything standalone -- you can't call `model.filter(data)` in a plain script. Every operation requires being inside a handler context.
 
-### The alternative (what we do)
+### What we do (same pattern, simpler)
+
+We now use `effectful` too, but with a simpler design:
 
 ```python
+from cuthbert_models import Filter, Discretizer, infer, EKF, EulerMaruyama
+
 model = NonlinearContinuousSSM(...)
-posterior = model.infer(obs_times, emissions, method=EKF(linearization="taylor"), discretization=EulerMaruyama())
+with Filter(EKF(linearization="taylor")):
+    with Discretizer(EulerMaruyama()):
+        posterior = infer(model, emissions, obs_times=t)
 ```
 
-Discretisation and filtering happen inside `_inference.py` as a single function call. No ambient state, no handler stack, no `effectful` dependency. The composability that dynestyx gets from handler stacking, we get from the bridge layer dispatching based on `isinstance(method, ...)` and `isinstance(discretization, ...)`.
+Two `@defop` operations (`infer`, `smooth`) and two handlers (`Filter`, `Discretizer`). Model classes are pure data (equinox Modules with no methods). The existing config objects (`Kalman`, `EKF`, `Particle`, `VanLoan`, `EulerMaruyama`) are passed to the handlers, not to model methods.
+
+Key differences from dynestyx:
+
+- No coupling to numpyro. `Filter` returns a `Posterior` object; the user calls `numpyro.factor` themselves if they want.
+- No `dsx.sample()` indirection. `infer(model, emissions)` is the operation.
+- `Discretizer` uses `fwd(...)` to pass the discretised model up to `Filter`, same composability pattern as dynestyx.
 
 ## Numerical comparison: Van Loan vs cd-dynamax ODE solver
 

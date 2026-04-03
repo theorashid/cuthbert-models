@@ -7,12 +7,16 @@ from _helpers import simulate_lgssm
 
 from cuthbert_models import (
     EKF,
+    Discretizer,
     EulerMaruyama,
+    Filter,
     Kalman,
     LinearContinuousSSM,
     NonlinearContinuousSSM,
     NonlinearGaussianSSM,
     VanLoan,
+    infer,
+    smooth,
 )
 
 
@@ -56,9 +60,8 @@ EKF_IDS = ["ekf_taylor", "ekf_moments"]
 @pytest.mark.parametrize("method", EKF_METHODS, ids=EKF_IDS)
 def test_log_likelihood_is_finite(method):
     model, obs_times, emissions, *_ = _ou_continuous(key=jr.key(0))
-    ll = model.infer(
-        obs_times, emissions, method=method, discretization=EulerMaruyama(),
-    ).marginal_log_likelihood
+    with Filter(method), Discretizer(EulerMaruyama()):
+        ll = infer(model, emissions, obs_times=obs_times).marginal_log_likelihood
     assert jnp.isfinite(ll)
 
 
@@ -80,12 +83,11 @@ def test_matches_linear_continuous_on_linear_model(method):
         emission_covariance=lambda _t: R,
     )
 
-    nl_result = model.infer(
-        obs_times, emissions, method=method, discretization=EulerMaruyama(),
-    )
-    lin_result = linear_model.infer(
-        obs_times, emissions, method=Kalman(), discretization=VanLoan(),
-    )
+    with Filter(method), Discretizer(EulerMaruyama()):
+        nl_result = infer(model, emissions, obs_times=obs_times)
+
+    with Filter(Kalman()), Discretizer(VanLoan()):
+        lin_result = infer(linear_model, emissions, obs_times=obs_times)
 
     assert jnp.allclose(
         nl_result.marginal_log_likelihood,
@@ -97,9 +99,10 @@ def test_matches_linear_continuous_on_linear_model(method):
 @pytest.mark.parametrize("method", EKF_METHODS, ids=EKF_IDS)
 def test_covariance_is_symmetric_and_positive(method):
     model, obs_times, emissions, *_ = _ou_continuous(key=jr.key(2))
-    covs = model.infer(
-        obs_times, emissions, method=method, discretization=EulerMaruyama(),
-    ).filtered_covariances
+    with Filter(method), Discretizer(EulerMaruyama()):
+        covs = infer(
+            model, emissions, obs_times=obs_times,
+        ).filtered_covariances
     batch_transpose = jnp.transpose(covs, (0, 2, 1))
     assert jnp.allclose(covs, batch_transpose, atol=1e-6)
     eigenvals = jnp.linalg.eigvalsh(covs)
@@ -147,12 +150,12 @@ def test_matches_hand_discretised_nonlinear_gaussian():
     )
 
     method = EKF(linearization="taylor")
-    cont_ll = cont_model.infer(
-        obs_times, emissions, method=method, discretization=EulerMaruyama(),
-    ).marginal_log_likelihood
-    disc_ll = disc_model.infer(
-        emissions, method=method,
-    ).marginal_log_likelihood
+    with Filter(method):
+        with Discretizer(EulerMaruyama()):
+            cont_ll = infer(
+                cont_model, emissions, obs_times=obs_times,
+            ).marginal_log_likelihood
+        disc_ll = infer(disc_model, emissions).marginal_log_likelihood
 
     assert jnp.allclose(cont_ll, disc_ll, atol=1e-3)
 
@@ -160,9 +163,8 @@ def test_matches_hand_discretised_nonlinear_gaussian():
 @pytest.mark.parametrize("method", EKF_METHODS, ids=EKF_IDS)
 def test_smoother_returns_smoothed_means(method):
     model, obs_times, emissions, *_ = _ou_continuous(key=jr.key(4))
-    result = model.smooth(
-        obs_times, emissions, method=method, discretization=EulerMaruyama(),
-    )
+    with Filter(method), Discretizer(EulerMaruyama()):
+        result = smooth(model, emissions, obs_times=obs_times)
     assert result.smoothed_means.shape == result.filtered_means.shape
     assert jnp.isfinite(result.marginal_log_likelihood)
 
@@ -206,9 +208,16 @@ def test_genuinely_nonlinear():
         emission_covariance=lambda _x, _t: R,
     )
 
-    result = model.infer(
-        obs_times, emissions, method=EKF(linearization="taylor"),
-        discretization=EulerMaruyama(),
-    )
+    with Filter(EKF(linearization="taylor")), Discretizer(EulerMaruyama()):
+        result = infer(model, emissions, obs_times=obs_times)
     assert jnp.isfinite(result.marginal_log_likelihood)
     assert result.filtered_means.shape == (n_time, state_dim)
+
+
+def test_requires_discretizer():
+    model, obs_times, emissions, *_ = _ou_continuous(key=jr.key(6))
+    with (
+        pytest.raises(TypeError, match="requires a Discretizer"),
+        Filter(EKF(linearization="taylor")),
+    ):
+        infer(model, emissions, obs_times=obs_times)

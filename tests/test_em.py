@@ -16,7 +16,7 @@ import jax.random as jr
 from _helpers import simulate_lgssm
 from jax.scipy.optimize import minimize
 
-from cuthbert_models import Kalman, LinearGaussianSSM
+from cuthbert_models import Filter, Kalman, LinearGaussianSSM, smooth
 
 
 def test_em_log_likelihood_improves():
@@ -43,7 +43,8 @@ def test_em_log_likelihood_improves():
             emission_weights=lambda _t: H,
             emission_covariance=lambda _t: R,
         )
-        result = model.smooth(emissions, method=Kalman())
+        with Filter(Kalman()):
+            result = smooth(model, emissions)
         log_liks.append(float(result.marginal_log_likelihood))
 
         smoothed_means = result.smoothed_means

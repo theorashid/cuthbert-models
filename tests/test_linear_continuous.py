@@ -5,10 +5,15 @@ import pytest
 from _helpers import simulate_lgssm
 
 from cuthbert_models import (
+    Discretizer,
+    Filter,
     Kalman,
     LinearContinuousSSM,
     LinearGaussianSSM,
+    Particle,
     VanLoan,
+    infer,
+    smooth,
 )
 
 
@@ -71,9 +76,8 @@ KALMAN_IDS = ["kalman", "kalman_parallel"]
 def test_log_likelihood_is_finite(method):
     m0, P0, A, L, H, R, _, _, obs_times, emissions = _simulate_ou(jr.key(0))
     model = _build_continuous(m0, P0, A, L, H, R)
-    ll = model.infer(
-        obs_times, emissions, method=method, discretization=VanLoan(),
-    ).marginal_log_likelihood
+    with Filter(method), Discretizer(VanLoan()):
+        ll = infer(model, emissions, obs_times=obs_times).marginal_log_likelihood
     assert jnp.isfinite(ll)
 
 
@@ -86,10 +90,10 @@ def test_matches_hand_discretised(method):
     cont_model = _build_continuous(m0, P0, A, L, H, R)
     disc_model = _build_discrete(m0, P0, F, Q, H, R)
 
-    cont_result = cont_model.infer(
-        obs_times, emissions, method=method, discretization=VanLoan(),
-    )
-    disc_result = disc_model.infer(emissions, method=method)
+    with Filter(method):
+        with Discretizer(VanLoan()):
+            cont_result = infer(cont_model, emissions, obs_times=obs_times)
+        disc_result = infer(disc_model, emissions)
 
     assert jnp.allclose(
         cont_result.marginal_log_likelihood,
@@ -108,9 +112,8 @@ def test_matches_hand_discretised(method):
 def test_covariance_is_symmetric_and_positive(method):
     m0, P0, A, L, H, R, _, _, obs_times, emissions = _simulate_ou(jr.key(2))
     model = _build_continuous(m0, P0, A, L, H, R)
-    covs = model.infer(
-        obs_times, emissions, method=method, discretization=VanLoan(),
-    ).filtered_covariances
+    with Filter(method), Discretizer(VanLoan()):
+        covs = infer(model, emissions, obs_times=obs_times).filtered_covariances
     batch_transpose = jnp.transpose(covs, (0, 2, 1))
     assert jnp.allclose(covs, batch_transpose, atol=1e-8)
     eigenvals = jnp.linalg.eigvalsh(covs)
@@ -120,10 +123,10 @@ def test_covariance_is_symmetric_and_positive(method):
 def test_parallel_matches_sequential():
     m0, P0, A, L, H, R, _, _, obs_times, emissions = _simulate_ou(jr.key(3))
     model = _build_continuous(m0, P0, A, L, H, R)
-    seq = model.infer(obs_times, emissions, method=Kalman(), discretization=VanLoan())
-    par = model.infer(
-        obs_times, emissions, method=Kalman(parallel=True), discretization=VanLoan(),
-    )
+    with Filter(Kalman()), Discretizer(VanLoan()):
+        seq = infer(model, emissions, obs_times=obs_times)
+    with Filter(Kalman(parallel=True)), Discretizer(VanLoan()):
+        par = infer(model, emissions, obs_times=obs_times)
     assert jnp.allclose(seq.filtered_means, par.filtered_means, atol=1e-3)
     assert jnp.allclose(
         seq.marginal_log_likelihood, par.marginal_log_likelihood, atol=1e-2,
@@ -133,9 +136,8 @@ def test_parallel_matches_sequential():
 def test_smoother_returns_smoothed_means():
     m0, P0, A, L, H, R, _, _, obs_times, emissions = _simulate_ou(jr.key(4))
     model = _build_continuous(m0, P0, A, L, H, R)
-    result = model.smooth(
-        obs_times, emissions, method=Kalman(), discretization=VanLoan(),
-    )
+    with Filter(Kalman()), Discretizer(VanLoan()):
+        result = smooth(model, emissions, obs_times=obs_times)
     assert result.smoothed_means.shape == result.filtered_means.shape
     assert result.smoothed_covariances.shape == result.filtered_covariances.shape
     assert jnp.isfinite(result.marginal_log_likelihood)
@@ -144,9 +146,8 @@ def test_smoother_returns_smoothed_means():
 def test_smoother_covariance_leq_filter():
     m0, P0, A, L, H, R, _, _, obs_times, emissions = _simulate_ou(jr.key(5))
     model = _build_continuous(m0, P0, A, L, H, R)
-    result = model.smooth(
-        obs_times, emissions, method=Kalman(), discretization=VanLoan(),
-    )
+    with Filter(Kalman()), Discretizer(VanLoan()):
+        result = smooth(model, emissions, obs_times=obs_times)
     diff = result.filtered_covariances - result.smoothed_covariances
     eigenvals = jnp.linalg.eigvalsh(diff)
     assert jnp.all(eigenvals > -1e-6)
@@ -155,12 +156,15 @@ def test_smoother_covariance_leq_filter():
 def test_smoother_matches_discrete():
     dt = 0.1
     m0, P0, A, L, H, R, F, Q, obs_times, emissions = _simulate_ou(jr.key(6), dt=dt)
-    cont_result = _build_continuous(m0, P0, A, L, H, R).smooth(
-        obs_times, emissions, method=Kalman(), discretization=VanLoan(),
-    )
-    disc_result = _build_discrete(m0, P0, F, Q, H, R).smooth(
-        emissions, method=Kalman(),
-    )
+    with Filter(Kalman()):
+        with Discretizer(VanLoan()):
+            cont_result = smooth(
+                _build_continuous(m0, P0, A, L, H, R),
+                emissions, obs_times=obs_times,
+            )
+        disc_result = smooth(
+            _build_discrete(m0, P0, F, Q, H, R), emissions,
+        )
     assert jnp.allclose(
         cont_result.smoothed_means, disc_result.smoothed_means, atol=1e-3,
     )
@@ -197,12 +201,12 @@ def test_multivariate_ou():
     cont_model = _build_continuous(m0, P0, A, L, H, R)
     disc_model = _build_discrete(m0, P0, F, Q, H, R)
 
-    cont_ll = cont_model.infer(
-        obs_times, emissions, method=Kalman(), discretization=VanLoan(),
-    ).marginal_log_likelihood
-    disc_ll = disc_model.infer(
-        emissions, method=Kalman(),
-    ).marginal_log_likelihood
+    with Filter(Kalman()):
+        with Discretizer(VanLoan()):
+            cont_ll = infer(
+                cont_model, emissions, obs_times=obs_times,
+            ).marginal_log_likelihood
+        disc_ll = infer(disc_model, emissions).marginal_log_likelihood
     assert jnp.allclose(cont_ll, disc_ll, atol=1e-3)
 
 
@@ -219,8 +223,21 @@ def test_non_uniform_obs_times():
     _, emissions = simulate_lgssm(m0, F_sim, Q_sim, H, R, n_time, jr.key(8))
 
     model = _build_continuous(m0, P0, A, L, H, R)
-    result = model.infer(
-        obs_times, emissions, method=Kalman(), discretization=VanLoan(),
-    )
+    with Filter(Kalman()), Discretizer(VanLoan()):
+        result = infer(model, emissions, obs_times=obs_times)
     assert jnp.isfinite(result.marginal_log_likelihood)
     assert result.filtered_means.shape == (n_time, 1)
+
+
+def test_particle_requires_discretizer():
+    from cuthbertlib.resampling.systematic import (  # noqa: PLC0415
+        resampling as systematic_resampling,
+    )
+
+    m0, P0, A, L, H, R, _, _, obs_times, emissions = _simulate_ou(jr.key(9))
+    model = _build_continuous(m0, P0, A, L, H, R)
+    method = Particle(
+        key=jr.key(0), resampling_fn=systematic_resampling, n_particles=50,
+    )
+    with pytest.raises(TypeError, match="requires a Discretizer"), Filter(method):
+        infer(model, emissions, obs_times=obs_times)

@@ -3,11 +3,6 @@ from collections.abc import Callable
 import equinox as eqx
 from jaxtyping import Array, Float
 
-from cuthbert_models._methods import Forward, Particle
-from cuthbert_models._types import DiscretePosterior, DiscreteSmoothedPosterior
-
-Method = Forward | Particle
-
 
 class HMM(eqx.Module):
 
@@ -28,29 +23,3 @@ class HMM(eqx.Module):
     emission_log_likelihood: Callable[
         [Float[Array, " obs"], Float[Array, ""]], Float[Array, " states"]
     ]
-
-    def infer(
-        self,
-        emissions: Float[Array, "time obs"],
-        method: Method,
-    ) -> DiscretePosterior:
-        from cuthbert_models._inference import (  # noqa: PLC0415
-            infer_forward,
-            infer_particle_hmm,
-        )
-
-        if isinstance(method, Forward):
-            return infer_forward(self, emissions, parallel=method.parallel)
-        return infer_particle_hmm(
-            self, emissions, key=method.key,
-            n_particles=method.n_particles, resampling_fn=method.resampling_fn,
-        )
-
-    def smooth(
-        self,
-        emissions: Float[Array, "time obs"],
-        method: Forward,
-    ) -> DiscreteSmoothedPosterior:
-        from cuthbert_models._inference import smooth_forward  # noqa: PLC0415
-
-        return smooth_forward(self, emissions, parallel=method.parallel)

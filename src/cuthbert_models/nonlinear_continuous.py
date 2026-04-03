@@ -3,14 +3,6 @@ from collections.abc import Callable
 import equinox as eqx
 from jaxtyping import Array, Float
 
-from cuthbert_models._discretize import EulerMaruyama, VanLoan
-from cuthbert_models._methods import EKF, Particle
-from cuthbert_models._types import GaussianPosterior, GaussianSmoothedPosterior
-
-Method = EKF | Particle
-SmoothMethod = EKF
-Discretization = EulerMaruyama | VanLoan
-
 
 class NonlinearContinuousSSM(eqx.Module):
 
@@ -44,43 +36,3 @@ class NonlinearContinuousSSM(eqx.Module):
     emission_covariance: Callable[
         [Float[Array, " state"], Float[Array, ""]], Float[Array, "obs obs"]
     ]
-
-    def infer(
-        self,
-        obs_times: Float[Array, " time"],
-        emissions: Float[Array, "time obs"],
-        method: Method,
-        discretization: Discretization,
-    ) -> GaussianPosterior:
-        if isinstance(discretization, VanLoan):
-            msg = (
-                "VanLoan discretization requires a linear model. "
-                "Use EulerMaruyama() for NonlinearContinuousSSM."
-            )
-            raise TypeError(msg)
-
-        from cuthbert_models._inference import (  # noqa: PLC0415
-            infer_nonlinear_continuous,
-        )
-
-        return infer_nonlinear_continuous(self, obs_times, emissions, method)
-
-    def smooth(
-        self,
-        obs_times: Float[Array, " time"],
-        emissions: Float[Array, "time obs"],
-        method: SmoothMethod,
-        discretization: Discretization,
-    ) -> GaussianSmoothedPosterior:
-        if isinstance(discretization, VanLoan):
-            msg = (
-                "VanLoan discretization requires a linear model. "
-                "Use EulerMaruyama() for NonlinearContinuousSSM."
-            )
-            raise TypeError(msg)
-
-        from cuthbert_models._inference import (  # noqa: PLC0415
-            smooth_nonlinear_continuous,
-        )
-
-        return smooth_nonlinear_continuous(self, obs_times, emissions, method)

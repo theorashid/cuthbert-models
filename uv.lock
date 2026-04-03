@@ -52,6 +52,7 @@ source = { editable = "." }
 dependencies = [
     { name = "cuthbert" },
     { name = "cuthbertlib" },
+    { name = "effectful" },
     { name = "equinox" },
     { name = "jax" },
     { name = "jaxtyping" },
@@ -76,6 +77,7 @@ dev = [
 requires-dist = [
     { name = "cuthbert", specifier = ">=0.0.9" },
     { name = "cuthbertlib", specifier = ">=0.0.9" },
+    { name = "effectful", specifier = ">=0.3.1" },
     { name = "equinox", specifier = ">=0.13.6" },
     { name = "jax", specifier = ">=0.9.2" },
     { name = "jaxtyping", specifier = ">=0.3.9" },
@@ -104,6 +106,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/54/a5/dd4da533fdf72296848804a879f158fa7687334bd7b58480c409ed818bf6/cuthbertlib-0.0.9.tar.gz", hash = "sha256:592a90d7ba6b637b8bd7342c54a2b3e8ef35b299ff155f23217c42907afefc43", size = 30012, upload-time = "2026-03-29T12:45:15.83Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1e/d6/c3405f9caf60a27adc903e79ec0381576fc7bf12fc1aa164862651422ef7/cuthbertlib-0.0.9-py3-none-any.whl", hash = "sha256:cf5bc95c09bdcd045167d7fddccc23a4864a19bbbe1cb985d10a3e1a35637c79", size = 49282, upload-time = "2026-03-29T12:45:14.565Z" },
+]
+
+[[package]]
+name = "effectful"
+version = "0.3.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f3/2b/93dfb96dbef5e485eb7724add480a431abb20418586b3bb361d9fb92d902/effectful-0.3.1.tar.gz", hash = "sha256:3840d80cd4d57384926659cc7aa8457d472d8d17049da752ec3a3a9c5a5f3bfd", size = 139973, upload-time = "2026-02-03T13:53:59.51Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f3/0e/f796f3a684d6e62f711e51b45c2419ab82d685766bb27c17651f4e7a5e70/effectful-0.3.1-py3-none-any.whl", hash = "sha256:3752bb533e2d403cc2615ff7980c87bbb2f80528a2750402ef6da4dc6b0cda60", size = 84796, upload-time = "2026-02-03T13:53:58.445Z" },
 ]
 
 [[package]]

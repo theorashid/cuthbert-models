@@ -11,6 +11,7 @@ requires-python = ">=3.12"
 dependencies = [
     "cuthbert>=0.0.9",
     "cuthbertlib>=0.0.9",
+    "effectful>=0.3.1",
     "equinox>=0.13.6",
     "jax>=0.9.2",
     "jaxtyping>=0.3.9",
@@ -96,3 +97,5 @@ extra-paths = ["src", "tests"]
 invalid-argument-type = "ignore"
 # numpyro.sample returns a union type that ty can't resolve unary `-` on
 unsupported-operator = "ignore"
+# effectful handler() returns a context manager type that ty can't resolve
+unresolved-attribute = "ignore"
