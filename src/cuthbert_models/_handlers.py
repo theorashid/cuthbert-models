@@ -206,6 +206,78 @@ class Discretizer(ObjectInterpretation, _HandlesSelf):
 
 
 # ---------------------------------------------------------------------------
+# NumpyroTrace handler (registers numpyro.factor and deterministic sites)
+# ---------------------------------------------------------------------------
+
+
+class NumpyroTrace(ObjectInterpretation, _HandlesSelf):
+
+    def __init__(self, name="ssm", *, deterministic=True):
+        super().__init__()
+        self.name = name
+        self.deterministic = deterministic
+
+    @implements(infer)
+    def _infer(self, model, emissions, *, obs_times=None):
+        posterior = fwd(model, emissions, obs_times=obs_times)
+        return self._register(posterior)
+
+    @implements(smooth)
+    def _smooth(self, model, emissions, *, obs_times=None):
+        posterior = fwd(model, emissions, obs_times=obs_times)
+        return self._register(posterior)
+
+    def _register(self, posterior):
+        import numpyro  # noqa: PLC0415
+
+        numpyro.factor(
+            f"{self.name}_log_likelihood", posterior.marginal_log_likelihood,
+        )
+        if not self.deterministic:
+            return posterior
+
+        numpyro.deterministic(
+            f"{self.name}_marginal_log_likelihood",
+            posterior.marginal_log_likelihood,
+        )
+        if isinstance(posterior, GaussianSmoothedPosterior):
+            numpyro.deterministic(
+                f"{self.name}_filtered_means", posterior.filtered_means,
+            )
+            numpyro.deterministic(
+                f"{self.name}_filtered_covariances",
+                posterior.filtered_covariances,
+            )
+            numpyro.deterministic(
+                f"{self.name}_smoothed_means", posterior.smoothed_means,
+            )
+            numpyro.deterministic(
+                f"{self.name}_smoothed_covariances",
+                posterior.smoothed_covariances,
+            )
+        elif isinstance(posterior, GaussianPosterior):
+            numpyro.deterministic(
+                f"{self.name}_filtered_means", posterior.filtered_means,
+            )
+            numpyro.deterministic(
+                f"{self.name}_filtered_covariances",
+                posterior.filtered_covariances,
+            )
+        elif isinstance(posterior, DiscreteSmoothedPosterior):
+            numpyro.deterministic(
+                f"{self.name}_filtered_probs", posterior.filtered_probs,
+            )
+            numpyro.deterministic(
+                f"{self.name}_smoothed_probs", posterior.smoothed_probs,
+            )
+        elif isinstance(posterior, DiscretePosterior):
+            numpyro.deterministic(
+                f"{self.name}_filtered_probs", posterior.filtered_probs,
+            )
+        return posterior
+
+
+# ---------------------------------------------------------------------------
 # Dispatch helpers (delegate to _inference.py)
 # ---------------------------------------------------------------------------
 

@@ -1,5 +1,5 @@
 from cuthbert_models._discretize import EulerMaruyama, VanLoan
-from cuthbert_models._handlers import Discretizer, Filter, infer, smooth
+from cuthbert_models._handlers import Discretizer, Filter, NumpyroTrace, infer, smooth
 from cuthbert_models._methods import EKF, Forward, Kalman, Particle
 from cuthbert_models._types import (
     DiscretePosterior,
@@ -31,6 +31,7 @@ __all__ = [
     "LinearGaussianSSM",
     "NonlinearContinuousSSM",
     "NonlinearGaussianSSM",
+    "NumpyroTrace",
     "Particle",
     "Posterior",
     "TrainableCovariance",

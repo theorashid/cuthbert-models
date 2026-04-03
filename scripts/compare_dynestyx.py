@@ -124,6 +124,7 @@ from cuthbert_models import (  # noqa: E402, RUF100
     Filter,
     Kalman,
     LinearContinuousSSM,
+    NumpyroTrace,
     VanLoan,
     infer,
 )
@@ -142,9 +143,12 @@ def cuthbert_numpyro_model(obs_times, obs_values):
         emission_covariance=lambda _t: R,
     )
 
-    with Filter(Kalman()), Discretizer(VanLoan()):
-        posterior = infer(model, obs_values, obs_times=obs_times)
-    numpyro.factor("log_likelihood", posterior.marginal_log_likelihood)
+    with (
+        Filter(Kalman()),
+        Discretizer(VanLoan()),
+        NumpyroTrace("ssm", deterministic=False),
+    ):
+        infer(model, obs_values, obs_times=obs_times)
 
 
 # -----------------------------------------------------------------------
@@ -172,7 +176,7 @@ with numpyro.handlers.seed(rng_seed=0):  # noqa: SIM117
         with numpyro.handlers.trace() as cm_trace:
             cuthbert_numpyro_model(OBS_TIMES, EMISSIONS)
 
-cm_site = cm_trace["log_likelihood"]
+cm_site = cm_trace["ssm_log_likelihood"]
 cm_ll = float(cm_site["fn"].log_prob(cm_site["value"]).sum())
 
 print(f"dynestyx ll:        {dsx_ll:.6f}") # noqa: T201

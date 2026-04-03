@@ -248,3 +248,21 @@ In dynestyx, this is the `Simulator` hierarchy (`dynestyx/simulators.py`):
 - `DiscreteTimeSimulator`: plain `lax.scan` loop, no solver needed
 
 A `simulate(model, obs_times, key)` function returning sampled states and observations would be the natural addition. diffrax would be an optional dependency (like numpyro is now).
+
+## `NumpyroTrace` handler
+
+`NumpyroTrace` is a composable handler that registers `numpyro.factor` (and optionally `numpyro.deterministic` sites for filtered/smoothed states) from the posterior returned by `Filter`. It intercepts `infer`/`smooth`, calls `fwd()` to delegate to the inner handlers, then registers the numpyro sites. numpyro is only imported when this handler is used.
+
+```python
+def numpyro_model(obs_times, y):
+    lam = numpyro.sample("lam", dist.LogNormal(0.0, 0.5))
+    sigma = numpyro.sample("sigma", dist.LogNormal(0.0, 0.5))
+
+    model = NonlinearContinuousSSM(...)
+    with Filter(EKF(linearization="taylor")), Discretizer(EulerMaruyama()), NumpyroTrace("f"):
+        infer(model, y, obs_times=obs_times)
+```
+
+Deterministic sites are on by default; pass `deterministic=False` to only register the factor.
+
+**Handler ordering.** In effectful, the handler entered *last* intercepts first. The `with` statement reads right-to-left as a call chain: `NumpyroTrace` intercepts, `fwd()`s to `Discretizer`, which `fwd()`s to `Filter`. The posterior propagates back through `fwd()` returns. Same ordering as `Discretizer` + `Filter`.

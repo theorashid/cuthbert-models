@@ -23,6 +23,7 @@ from cuthbert_models import (
     LinearGaussianSSM,
     NonlinearContinuousSSM,
     NonlinearGaussianSSM,
+    NumpyroTrace,
     Particle,
     TrainableCovariance,
     TrainableWeights,
@@ -211,9 +212,12 @@ def _numpyro_model_nonlinear_continuous(obs_times, y, m0, P0, H, R):
         emission_fn=lambda x, _t: H @ x,
         emission_covariance=lambda _x, _t: R,
     )
-    with Filter(EKF(linearization="taylor")), Discretizer(EulerMaruyama()):
-        posterior = infer(model, y, obs_times=obs_times)
-    numpyro.factor("log_likelihood", posterior.marginal_log_likelihood)
+    with (
+        Filter(EKF(linearization="taylor")),
+        Discretizer(EulerMaruyama()),
+        NumpyroTrace(deterministic=False),
+    ):
+        infer(model, y, obs_times=obs_times)
 
 
 def test_numpyro_svi_nonlinear_continuous():
@@ -263,9 +267,8 @@ def _numpyro_model_kalman(y, m0, P0, H, R):
         emission_weights=lambda _t: H,
         emission_covariance=lambda _t: R,
     )
-    with Filter(Kalman()):
-        posterior = infer(model, y)
-    numpyro.factor("log_likelihood", posterior.marginal_log_likelihood)
+    with Filter(Kalman()), NumpyroTrace(deterministic=False):
+        infer(model, y)
 
 
 def _numpyro_model_nonlinear(y, method, m0, P0, H, R):
