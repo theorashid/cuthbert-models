@@ -11,11 +11,13 @@ from cuthbertlib.resampling.systematic import (
 from cuthbert_models import (
     EKF,
     HMM,
+    Filter,
     Forward,
     Kalman,
     LinearGaussianSSM,
     NonlinearGaussianSSM,
     Particle,
+    infer,
 )
 
 # ---------------------------------------------------------------------------
@@ -104,9 +106,8 @@ def test_kalman_nan_finite(parallel):
     params, emissions = random_lgssm_args(jr.key(100))
     model = _build_linear(params)
     nan_emissions = _inject_nans(emissions, NAN_INDICES)
-    result = model.infer(
-        nan_emissions, method=Kalman(parallel=parallel),
-    )
+    with Filter(Kalman(parallel=parallel)):
+        result = infer(model, nan_emissions)
     assert jnp.all(jnp.isfinite(result.filtered_means))
     assert jnp.isfinite(result.marginal_log_likelihood)
 
@@ -120,9 +121,8 @@ def test_ekf_taylor_nan_finite():
     params, emissions = random_lgssm_args(jr.key(101))
     model = _build_nonlinear(params)
     nan_emissions = _inject_nans(emissions, NAN_INDICES)
-    result = model.infer(
-        nan_emissions, method=EKF(linearization="taylor"),
-    )
+    with Filter(EKF(linearization="taylor")):
+        result = infer(model, nan_emissions)
     assert jnp.all(jnp.isfinite(result.filtered_means))
     assert jnp.isfinite(result.marginal_log_likelihood)
 
@@ -136,9 +136,8 @@ def test_ekf_moments_nan_finite():
     params, emissions = random_lgssm_args(jr.key(102))
     model = _build_nonlinear(params)
     nan_emissions = _inject_nans(emissions, NAN_INDICES)
-    result = model.infer(
-        nan_emissions, method=EKF(linearization="moments"),
-    )
+    with Filter(EKF(linearization="moments")):
+        result = infer(model, nan_emissions)
     assert jnp.all(jnp.isfinite(result.filtered_means))
     assert jnp.isfinite(result.marginal_log_likelihood)
 
@@ -154,9 +153,8 @@ def test_ekf_moments_nan_finite():
 def test_forward_nan_finite(parallel):
     model, emissions = _random_hmm(jr.key(103))
     nan_emissions = _inject_nans(emissions, NAN_INDICES)
-    result = model.infer(
-        nan_emissions, method=Forward(parallel=parallel),
-    )
+    with Filter(Forward(parallel=parallel)):
+        result = infer(model, nan_emissions)
     assert jnp.all(jnp.isfinite(result.filtered_probs))
     assert jnp.isfinite(result.marginal_log_likelihood)
 
@@ -170,14 +168,11 @@ def test_particle_gaussian_nan_finite():
     params, emissions = random_lgssm_args(jr.key(104))
     model = _build_nonlinear(params)
     nan_emissions = _inject_nans(emissions, NAN_INDICES)
-    result = model.infer(
-        nan_emissions,
-        method=Particle(
-            key=jr.key(0),
-            resampling_fn=systematic_resampling,
-            n_particles=300,
-        ),
+    method = Particle(
+        key=jr.key(0), resampling_fn=systematic_resampling, n_particles=300,
     )
+    with Filter(method):
+        result = infer(model, nan_emissions)
     assert jnp.all(jnp.isfinite(result.filtered_means))
     assert jnp.isfinite(result.marginal_log_likelihood)
 
@@ -190,13 +185,10 @@ def test_particle_gaussian_nan_finite():
 def test_particle_hmm_nan_finite():
     model, emissions = _random_hmm(jr.key(105))
     nan_emissions = _inject_nans(emissions, NAN_INDICES)
-    result = model.infer(
-        nan_emissions,
-        method=Particle(
-            key=jr.key(0),
-            resampling_fn=systematic_resampling,
-            n_particles=300,
-        ),
+    method = Particle(
+        key=jr.key(0), resampling_fn=systematic_resampling, n_particles=300,
     )
+    with Filter(method):
+        result = infer(model, nan_emissions)
     assert jnp.all(jnp.isfinite(result.filtered_probs))
     assert jnp.isfinite(result.marginal_log_likelihood)

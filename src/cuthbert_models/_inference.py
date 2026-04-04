@@ -25,6 +25,7 @@ from cuthbert.gaussian.taylor import smoother as taylor_smoother_mod
 from cuthbert.smc import particle_filter as pf
 from jaxtyping import Array, Float, Key
 
+from cuthbert_models._discretize import van_loan_discretise
 from cuthbert_models._types import (
     DiscretePosterior,
     DiscreteSmoothedPosterior,
@@ -40,12 +41,14 @@ __all__ = [
     "infer_ekf_moments",
     "infer_forward",
     "infer_kalman",
+    "infer_linear_continuous",
     "infer_particle_gaussian",
     "infer_particle_hmm",
     "smooth_ekf",
     "smooth_ekf_moments",
     "smooth_forward",
     "smooth_kalman",
+    "smooth_linear_continuous",
 ]
 
 # ---------------------------------------------------------------------------
@@ -514,3 +517,91 @@ def infer_particle_hmm(
         marginal_log_likelihood=states.log_normalizing_constant[-1],
         filtered_probs=filtered_probs,
     )
+
+
+# ---------------------------------------------------------------------------
+# Linear continuous-discrete: Van Loan exact discretisation
+# ---------------------------------------------------------------------------
+
+
+def _linear_continuous_callbacks(
+    model,  # LinearContinuousSSM (untyped to avoid circular import)
+    obs_times: Float[Array, " time"],
+    emissions: Float[Array, "time obs"],
+):
+    """Build Kalman callbacks for a linear continuous-discrete SSM."""
+    dtype = model.initial_mean.dtype
+    state_dim = model.initial_mean.shape[0]
+    obs_dim = emissions.shape[-1]
+
+    chol_P0 = jnp.linalg.cholesky(model.initial_covariance)
+    c = jnp.zeros(state_dim, dtype=dtype)
+    d = jnp.zeros(obs_dim, dtype=dtype)
+
+    def get_init_params(_mi):
+        return model.initial_mean, chol_P0
+
+    def get_dynamics_params(mi):
+        t_idx = jnp.array(mi - 1, dtype=jnp.int32)
+        t_now = obs_times[t_idx]
+        # dt to next observation; for the last step, use the previous dt
+        t_next = jnp.where(
+            t_idx < obs_times.shape[0] - 1,
+            obs_times[t_idx + 1],
+            obs_times[t_idx] + (obs_times[-1] - obs_times[-2]),
+        )
+        dt = t_next - t_now
+        A_t = model.drift_matrix(t_now)
+        L_t = model.diffusion_coefficient(t_now)
+        F_t, Q_t = van_loan_discretise(A_t, L_t, dt)
+        return F_t, c, jnp.linalg.cholesky(Q_t)
+
+    def get_observation_params(mi):
+        t_idx = jnp.array(mi - 1, dtype=jnp.int32)
+        t = obs_times[t_idx]
+        H_t = model.emission_weights(t)
+        R_t = model.emission_covariance(t)
+        y = emissions[t_idx]
+        missing = jnp.any(jnp.isnan(y))
+        H_t = jnp.where(missing, jnp.zeros_like(H_t), H_t)
+        y = jnp.where(missing, jnp.zeros_like(y), y)
+        return H_t, d, jnp.linalg.cholesky(R_t), y
+
+    return get_init_params, get_dynamics_params, get_observation_params
+
+
+def infer_linear_continuous(
+    model,
+    obs_times: Float[Array, " time"],
+    emissions: Float[Array, "time obs"],
+    *,
+    parallel: bool = False,
+) -> GaussianPosterior:
+    get_init, get_dyn, get_obs = _linear_continuous_callbacks(
+        model, obs_times, emissions,
+    )
+    filter_obj = kalman.build_filter(get_init, get_dyn, get_obs)
+    model_inputs = jnp.arange(emissions.shape[0] + 1)
+    states = cuthbert_filter(filter_obj, model_inputs, parallel=parallel)
+    return _gaussian_posterior(states)
+
+
+def smooth_linear_continuous(
+    model,
+    obs_times: Float[Array, " time"],
+    emissions: Float[Array, "time obs"],
+    *,
+    parallel: bool = False,
+) -> GaussianSmoothedPosterior:
+    get_init, get_dyn, get_obs = _linear_continuous_callbacks(
+        model, obs_times, emissions,
+    )
+    filter_obj = kalman.build_filter(get_init, get_dyn, get_obs)
+    smoother_obj = kalman.build_smoother(get_dyn)
+    model_inputs = jnp.arange(emissions.shape[0] + 1)
+    filter_states = cuthbert_filter(filter_obj, model_inputs, parallel=parallel)
+    smoother_states = cuthbert_smoother(
+        smoother_obj, filter_states, parallel=parallel,
+    )
+    return _gaussian_smoothed_posterior(filter_states, smoother_states)
+
